@@ -1,0 +1,9 @@
+# 依赖测试环境（离线下载的 jsdom 等，可重新生成）
+_smoke/node_modules/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
