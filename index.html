@@ -27,6 +27,10 @@
           <span class="search-icon"></span>
           <input type="search" id="search-input" placeholder="搜索文章… (Ctrl+K)" autocomplete="off">
         </div>
+        <button class="icon-btn cloud-btn" id="btn-cloud" title="云端同步" aria-label="云端同步" hidden>
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.2 10.4A4 4 0 0 0 7 19z"/></svg>
+          <em class="cloud-dot"></em>
+        </button>
         <button class="icon-btn" id="btn-theme" title="切换主题" aria-label="切换主题"></button>
         <button class="icon-btn menu-btn" id="btn-menu" title="菜单" aria-label="打开菜单">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -56,6 +60,7 @@
   <!-- 确认弹层 -->
   <div class="overlay center" id="confirm-overlay"></div>
 
+  <script src="crypto.js"></script>
   <script src="blog.js"></script>
 </body>
 </html>

@@ -1,0 +1,133 @@
+{
+  "version": 2,
+  "savedAt": 1791632734656,
+  "posts": [
+    {
+      "id": "post_welcome",
+      "title": "欢迎来到我的博客",
+      "category": "随笔",
+      "tags": [
+        "公告",
+        "博客"
+      ],
+      "cover": "",
+      "pinned": true,
+      "status": "published",
+      "likes": 12,
+      "views": 108,
+      "created": 1791546334351,
+      "updated": 1791546334351,
+      "content": "你好，欢迎来到我的个人博客！这是一个**纯前端实现**的博客系统，所有数据都保存在浏览器的 `localStorage` 中，无需任何后端服务。\n\n## 这个博客能做什么\n\n- 📝 完整的文章管理：发布、编辑、删除、置顶、草稿\n- 🏷️ 分类与标签筛选，支持全文搜索\n- 💬 评论系统：楼中楼回复、点赞\n- 🌗 亮色 / 暗色主题切换\n- 📱 响应式布局，手机也能舒服阅读\n- 💾 数据导入导出，换电脑不丢内容\n\n## 快速上手\n\n1. 点击右上角 **写文章** 即可创建新内容（需管理员登录）\n2. 在关于页面可以修改站点信息\n3. 底部工具区支持导出全部数据为 JSON 文件\n\n> 提示：管理员登录使用密钥密码解密，明文密码不保存在代码或仓库中。\n\n祝你写得开心！"
+    },
+    {
+      "id": "post_js_guide",
+      "title": "JavaScript 闭包与作用域详解",
+      "category": "前端开发",
+      "tags": [
+        "JavaScript",
+        "教程"
+      ],
+      "cover": "",
+      "pinned": false,
+      "status": "published",
+      "likes": 8,
+      "views": 76,
+      "created": 1791373534351,
+      "updated": 1791373534351,
+      "content": "闭包是 JavaScript 最核心的概念之一，理解它才能真正理解这门语言的运行机制。\n\n## 什么是闭包\n\n> 闭包是指**能够访问其词法作用域外部变量的函数**，即使该函数在其原始作用域之外被执行。\n\n简单例子：\n\n```js\nfunction createCounter() {\n  let count = 0;           // 私有变量\n  return function () {\n    count += 1;\n    return count;\n  };\n}\n\nconst counter = createCounter();\nconsole.log(counter()); // 1\nconsole.log(counter()); // 2\nconsole.log(counter()); // 3\n```\n\n`count` 变量被返回的函数\"记住\"了，这就是闭包。\n\n## 典型应用场景\n\n| 场景 | 说明 |\n| --- | --- |\n| 数据私有 | 模拟私有变量，外部无法直接访问 |\n| 函数工厂 | 返回定制化行为的函数 |\n| 缓存 / 记忆化 | 缓存计算结果避免重复计算 |\n| 事件回调 | 保持对创建时上下文的引用 |\n\n## 注意事项\n\n1. 闭包会让变量常驻内存，滥用会导致**内存泄漏**\n2. 循环中创建闭包要使用 `let` 或 IIFE 固定变量\n3. 理解作用域链是排查变量覆盖问题的关键\n\n```js\n// 经典面试题：循环中的闭包\nfor (var i = 0; i < 3; i++) {\n  setTimeout(() => console.log(i), 100);\n} // 输出 3 3 3\n\nfor (let j = 0; j < 3; j++) {\n  setTimeout(() => console.log(j), 100);\n} // 输出 0 1 2\n```"
+    },
+    {
+      "id": "post_css_layout",
+      "title": "CSS 布局技巧：从 Flexbox 到 Grid",
+      "category": "前端开发",
+      "tags": [
+        "CSS",
+        "教程"
+      ],
+      "cover": "",
+      "pinned": false,
+      "status": "published",
+      "likes": 5,
+      "views": 54,
+      "created": 1791114334351,
+      "updated": 1791200734351,
+      "content": "现代 CSS 提供了两套强大的布局系统：**Flexbox** 负责一维布局，**Grid** 负责二维布局。\n\n## Flexbox 一维布局\n\n```css\n.nav {\n  display: flex;\n  align-items: center;    /* 交叉轴居中 */\n  justify-content: space-between;\n  gap: 16px;\n}\n```\n\n适合导航栏、工具条、卡片内文字与按钮的水平排布。\n\n## Grid 二维布局\n\n```css\n.posts {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));\n  gap: 20px;\n}\n```\n\n一行代码就能实现**自适应瀑布流卡片**，非常适合博客文章列表。\n\n## 如何选择\n\n- 只有一个方向需要对齐 → 用 Flexbox\n- 行和列都需要控制 → 用 Grid\n- 现代实践中两者常常**配合使用**，并不互斥"
+    },
+    {
+      "id": "post_read_list",
+      "title": "我的 2025 阅读书单与心得",
+      "category": "生活记录",
+      "tags": [
+        "读书",
+        "思考"
+      ],
+      "cover": "",
+      "pinned": false,
+      "status": "published",
+      "likes": 6,
+      "views": 43,
+      "created": 1790595934351,
+      "updated": 1790595934351,
+      "content": "过去一年我读完了 18 本书，这里挑选三本最有收获的记录一下。\n\n## 《纳瓦尔宝典》\n\n关于财富与幸福的箴言合集。核心观点：**用杠杆放大判断力**，并把时间花在复利效应的事情上。\n\n## 《置身事内》\n\n理解中国经济的绝佳入门书，把地方政府的行为逻辑讲得非常清楚。\n\n## 《被讨厌的勇气》\n\n阿德勒心理学的对话体普及读物。\"课题分离\"这个概念让我在人际交往中轻松了很多。\n\n> 阅读不在于数量，而在于是否改变了你的某个行为。\n\n## 一些读书习惯\n\n1. 每天固定 30 分钟，睡前不带手机\n2. 边读边写批注，读完必写一段总结\n3. 同时最多读两本，一本专业、一本休闲"
+    },
+    {
+      "id": "post_draft_tools",
+      "title": "高效开发者的 10 个 VS Code 插件",
+      "category": "工具分享",
+      "tags": [
+        "工具",
+        "效率"
+      ],
+      "cover": "",
+      "pinned": false,
+      "status": "draft",
+      "likes": 0,
+      "views": 0,
+      "created": 1791459934351,
+      "updated": 1791459934351,
+      "content": "（这是一篇**草稿**，点击发布后才会出现在首页。）\n\n1. Prettier — 代码格式化\n2. ESLint — 语法检查\n3. GitLens — Git 增强\n4. Error Lens — 错误内联显示\n5. Path Intellisense — 路径自动补全"
+    }
+  ],
+  "comments": [
+    {
+      "id": "c_1",
+      "postId": "post_welcome",
+      "parentId": null,
+      "nickname": "小明",
+      "content": "博客写得很不错，界面很清爽！",
+      "likes": 3,
+      "admin": false,
+      "created": 1791560734351
+    },
+    {
+      "id": "c_2",
+      "postId": "post_welcome",
+      "parentId": "c_1",
+      "nickname": "博主",
+      "content": "谢谢支持，欢迎常来～",
+      "likes": 1,
+      "admin": true,
+      "created": 1791564334351
+    },
+    {
+      "id": "c_3",
+      "postId": "post_js_guide",
+      "parentId": null,
+      "nickname": "路过的前端",
+      "content": "闭包这段讲得清楚，循环闭包的面试题也解释明白了。",
+      "likes": 5,
+      "admin": false,
+      "created": 1791459934351
+    }
+  ],
+  "config": {
+    "siteName": "My Blog",
+    "slogan": "记录 · 思考 · 分享",
+    "author": "博主",
+    "avatar": "",
+    "bio": "一个热爱技术与生活的普通人，这里是我的自留地。",
+    "github": "",
+    "email": "",
+    "about": "欢迎来到我的个人博客。\n\n这里主要记录**前端技术**、读书笔记与生活随想。所有文章均为原创，转载请注明出处。\n\n如果你对文章有疑问，欢迎在评论区留言交流。"
+  }
+}

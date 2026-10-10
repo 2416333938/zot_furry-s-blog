@@ -38,7 +38,22 @@ async function main() {
     Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: () => Promise.resolve() } });
   }
 
-  // 执行 blog.js（等同于 <script src> 同步加载）
+  // 让 fetch 能读取本地 secret.json（模拟静态站点下的密文获取）
+  window.fetch = function (url) {
+    const clean = String(url).split('?')[0];
+    if (clean === 'secret.json' || clean.endsWith('/secret.json')) {
+      const body = fs.readFileSync(path.join(ROOT, 'secret.json'), 'utf-8');
+      return Promise.resolve({
+        ok: true, status: 200,
+        text: () => Promise.resolve(body),
+        json: () => Promise.resolve(JSON.parse(body))
+      });
+    }
+    return Promise.reject(new Error('NETWORK_BLOCKED: ' + url));
+  };
+
+  // 按 index.html 的顺序加载：crypto.js → blog.js
+  window.eval(fs.readFileSync(path.join(ROOT, 'crypto.js'), 'utf-8'));
   const code = fs.readFileSync(path.join(ROOT, 'blog.js'), 'utf-8');
   try {
     window.eval(code);
@@ -189,17 +204,19 @@ async function main() {
   await tick(60);
   ok($('#login-overlay').classList.contains('open'), '登录弹层打开');
 
-  // 错误密码
+  // 错误密码（现在是"用错密码解密"）
   $('#login-pass').value = 'wrong-pass';
   click($('#btn-login'));
-  await tick(700);
+  await tick(900);
   ok($('#login-error') && !$('#login-error').hidden, '错误密码有提示');
   ok($('#login-overlay').classList.contains('open'), '错误密码后弹层仍打开');
 
-  // 正确密码
-  $('#login-pass').value = 'admin123';
+  // 正确密码：由环境变量提供，解密成功即登录
+  const PW = process.env.BLOG_TEST_PASSWORD;
+  if (!PW) { console.error('缺少 BLOG_TEST_PASSWORD 环境变量，无法测试登录'); process.exit(1); }
+  $('#login-pass').value = PW;
   click($('#btn-login'));
-  await tick(800);
+  await tick(1800);
   ok(!$('#login-overlay').classList.contains('open'), '登录成功后弹层关闭');
   ok($$('#nav-menu [data-action="new-post"]').length === 1, '登录后出现写文章入口');
   ok($$('#nav-menu [data-action="logout"]').length === 1, '登录后出现退出入口');

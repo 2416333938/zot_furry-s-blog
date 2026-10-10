@@ -886,6 +886,94 @@ hr.soft { border: none; border-top: 1px solid var(--border); margin: 34px 0; }
 }
 .check-label input { accent-color: var(--primary); width: 16px; height: 16px; }
 
+/* ---------- 13.1 云端同步面板 ---------- */
+.cloud-panel {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-top: 16px;
+}
+.cloud-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 22px;
+}
+.cloud-grid > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13.5px;
+  min-width: 0;
+}
+.cloud-grid b {
+  flex: none;
+  color: var(--muted);
+  font-weight: 600;
+  min-width: 58px;
+}
+.cloud-grid a, .cloud-grid span { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+.cloud-grid code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text-2);
+}
+.cloud-status {
+  font-weight: 700;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+.cloud-status.ok { background: rgba(0,184,148,.14); color: var(--accent); }
+.cloud-status.busy { background: var(--primary-soft); color: var(--primary); }
+.cloud-status.bad { background: rgba(231,76,60,.14); color: var(--danger); }
+.cloud-status.muted { background: var(--bg-soft); color: var(--muted); }
+.cloud-msg { margin: 12px 0 0; font-size: 13px; word-break: break-word; }
+
+.cloud-form { margin-top: 18px; }
+.cloud-tip {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: var(--primary-soft);
+  border: 1px dashed color-mix(in srgb, var(--primary) 45%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-2);
+}
+.cloud-tip code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.pat-input { display: flex; gap: 8px; }
+.pat-input input { flex: 1; font-family: var(--mono); font-size: 13px; min-width: 0; }
+.pat-input .btn { flex: none; }
+
+.cloud-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+/* 导航栏云端状态指示 */
+.cloud-btn { position: relative; }
+.cloud-btn[hidden] { display: none; }
+.cloud-dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  border: 1.5px solid var(--card);
+}
+.cloud-dot.ok { background: var(--accent); }
+.cloud-dot.busy { background: var(--warning); animation: cloudPulse 1s ease-in-out infinite; }
+.cloud-dot.bad { background: var(--danger); }
+@keyframes cloudPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
 /* ---------- 14. 弹层：编辑器 ---------- */
 .overlay {
   position: fixed; inset: 0;

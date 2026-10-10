@@ -27,11 +27,33 @@
     theme: 'blog_theme_v1',        // 主题偏好
     visitor: 'blog_visitor_v1',    // 访客昵称
     auth: 'blog_auth_v1',          // 管理员登录状态
-    drafts: 'blog_drafts_v1'       // 编辑器草稿
+    drafts: 'blog_drafts_v1',      // 编辑器草稿
+    pat: 'blog_pat_v1',            // GitHub 令牌（仅存管理员本机，绝不提交到仓库）
+    cloud: 'blog_cloud_v1'         // 云端同步元信息（上次同步时间等）
   };
 
-  var ADMIN_PASSWORD = 'Aa2452088011';   // 管理员密码（可自行修改）
   var PAGE_SIZE = 6;                 // 首页每页文章数
+
+  /* ---------------------------------------------------------------
+   * 管理员密钥密文包（EMBEDDED_SECRET）
+   * ---------------------------------------------------------------
+   * 这里放的是加密后的密文，不含任何明文密码。
+   * 登录 = 用输入的密码解密成功 → 获得写入仓库所需的令牌。
+   * 密文由 tools/gen-secret.js 生成，请勿手工编辑。
+   * 同步的一份放在仓库根目录 secret.json（内容相同，供在线版读取）。
+   * --------------------------------------------------------------- */
+  var EMBEDDED_SECRET = {"v":1,"alg":"PBKDF2-HMAC-SHA256 + HMAC-SHA256-CTR + HMAC-SHA256(encrypt-then-MAC)","kdf":{"name":"PBKDF2-HMAC-SHA256","salt":"8HuYxumW1NqZUY0m1YvDPg==","iterations":150000},"iv":"Q8wMt2w+duUSukbTLQD+Qg==","ct":"8DCVF+cy6oQoyhlyPgtgWPrHNmtlEeiNC40NSMhVMLrwBC/1GkugEjkhjWXl7ccCh+/zWCItlJo+LTejqGTbpek3p5M9+tLQatBtmluXXERBR6uhUKjjP/PrgyGgwOVpwhYUF1kVUIdIGs/8cv0a6+BckrrNaF1GExymIOca0g+c1n4HLnsJ+7oPQVeynkJaMPQb1nmoLnCg0460QUn5GV3V+bxGObZcQQfcD3t0lF4Ua2hDwRKH7re/xaUJxQ7llsDycaNs2P7pojtdXEO+Y5ce61lcBjDtl7VhGcYzH0fJ","mac":"TPCJF3rjG4TAN3su19dvPbkp8NaAjX9CPGCOi/hQNIs=","created":"2026-10-10T11:40:56.238Z"};   // 由 tools/gen-secret.js 生成，仅含密文
+  var SECRET_REMOTE_PATH = 'secret.json';
+
+  /* 云端数据仓库：文章数据以该文件为准 */
+  var CLOUD_TARGET = {
+    owner: '2416333938',
+    repo: 'zot_furry-s-blog',
+    branch: 'main',
+    path: 'data/blog-data.json'
+  };
+  var CLOUD_API = 'https://api.github.com';
+  var CLOUD_PULL_MIN_INTERVAL = 60 * 1000;  // 两次自动拉取的最小间隔，避免触发匿名限流
 
   var QUOTES = [
     { text: '路漫漫其修远兮，吾将上下而求索。', author: '屈原' },
@@ -497,7 +519,20 @@
     sort: 'new',           // new | hot
     editingId: null,       // null=新建，否则为文章 id
     replyingTo: null,      // 正在回复的评论 id
-    backTarget: 'home'
+    backTarget: 'home',
+
+    // 云端同步状态
+    cloud: {
+      pat: sessionStorage.getItem(STORAGE_KEYS.pat) || localStorage.getItem(STORAGE_KEYS.pat) || '',
+      persistPat: !!localStorage.getItem(STORAGE_KEYS.pat),
+      status: 'idle',      // idle | syncing | synced | error | offline
+      message: '',
+      sha: null,
+      lastSync: load(STORAGE_KEYS.cloud, {}).lastSync || null,
+      lastPullAt: 0,
+      inFlight: false,
+      queued: false
+    }
   };
 
   /* =====================================================
@@ -537,7 +572,7 @@
           '2. 在关于页面可以修改站点信息',
           '3. 底部工具区支持导出全部数据为 JSON 文件',
           '',
-          '> 提示：默认管理员密码是 `admin123`，可在 `blog.js` 顶部的 `ADMIN_PASSWORD` 常量中修改。',
+          '> 提示：管理员登录使用密钥密码解密，明文密码不保存在代码或仓库中。',
           '',
           '祝你写得开心！'
         ].join('\n')
@@ -1346,6 +1381,7 @@
       }
     }, 80);
     toast('评论发表成功', 'success');
+    scheduleCloudPush('新增评论');
   }
 
   /** 回复评论 */
@@ -1374,6 +1410,7 @@
     var post = state.posts.find(function (p) { return p.id === postId; });
     renderPostPage(post);
     toast('回复成功', 'success');
+    scheduleCloudPush('新增评论回复');
   }
 
   /* =====================================================
@@ -1409,9 +1446,12 @@
       html += field('联系邮箱', 'email', cfg.email);
       html += '<div class="form-row full"><label>关于我（支持 Markdown）</label>' +
         '<textarea id="set-about" rows="8">' + escapeHtml(cfg.about) + '</textarea></div>';
-      html += '<div class="form-foot full"><span class="muted">修改后立即生效并保存到本地</span>' +
+      html += '<div class="form-foot full"><span class="muted">修改后立即生效；已连接云端时会自动上传到仓库</span>' +
         '<button class="btn btn-primary" data-action="save-config">保存设置</button></div>';
       html += '</div>';
+
+      /* 云端同步 */
+      html += renderCloudPanel();
     }
 
     html += '</section></div>';
@@ -1438,6 +1478,7 @@
     renderHeader();
     toast('站点设置已保存', 'success');
     renderAboutPage();
+    scheduleCloudPush('更新站点设置');
   }
 
   /* =====================================================
@@ -1673,6 +1714,7 @@
       closeEditor(true);
       toast(asDraft ? '已保存为草稿' : '文章已更新', 'success');
       handleRoute();
+      scheduleCloudPush('更新文章：' + title);
       return;
     }
 
@@ -1702,11 +1744,60 @@
       toast('文章发布成功 🎉', 'success');
       navigate('#/post/' + np.id);
     }
+    scheduleCloudPush((asDraft ? '保存草稿：' : '发布文章：') + title);
   }
 
   /* =====================================================
-   * 十四、登录
+   * 十四、登录（密文解锁）
    * ===================================================== */
+
+  /* 密文来源：优先用 blog.js 内嵌副本（保证 file:// 双击可用），
+     其次在线读取仓库根目录的 secret.json（便于轮换密钥而不改代码）。 */
+  var secretReady = false;
+  var secretBundlePromise = null;
+
+  function ensureSecretBundle() {
+    if (secretBundlePromise) return secretBundlePromise;
+    secretBundlePromise = (function () {
+      // 1) 内嵌副本
+      if (EMBEDDED_SECRET && EMBEDDED_SECRET.ct) {
+        secretReady = true;
+        return Promise.resolve(EMBEDDED_SECRET);
+      }
+      // 2) 同在仓库的 secret.json（相对路径，Pages 与本地服务均可用）
+      return fetch(SECRET_REMOTE_PATH + '?_=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('未找到 secret.json');
+          return r.json();
+        })
+        .then(function (b) {
+          if (!b || !b.ct) throw new Error('secret.json 内容无效');
+          secretReady = true;
+          return b;
+        })
+        .catch(function () {
+          // 3) 兜底：走 GitHub API（仓库可能未启用 Pages 或路径不同）
+          var t = getCloudTarget();
+          return fetch(CLOUD_API + '/repos/' + t.owner + '/' + t.repo +
+              '/contents/' + SECRET_REMOTE_PATH + '?ref=' + encodeURIComponent(t.branch) +
+              '&_=' + Date.now(), {
+            headers: { 'Accept': 'application/vnd.github+json' },
+            cache: 'no-store'
+          }).then(function (r) {
+            if (!r.ok) throw new Error('未能获取密文（HTTP ' + r.status + '）');
+            return r.json();
+          }).then(function (res) {
+            if (!res || typeof res.content !== 'string') throw new Error('密文为空');
+            var b = JSON.parse(b64DecodeUnicode(res.content));
+            if (!b || !b.ct) throw new Error('密文解析失败');
+            secretReady = true;
+            return b;
+          });
+        });
+    })();
+    return secretBundlePromise;
+  }
+
   function openLogin(onSuccess) {
     var overlay = document.getElementById('login-overlay');
     overlay.innerHTML = [
@@ -1714,13 +1805,13 @@
       '  <button class="modal-close" data-action="close-login" aria-label="关闭">' + ICONS.close + '</button>',
       '  <div class="modal-icon">🔐</div>',
       '  <h3>管理员登录</h3>',
-      '  <p class="muted">登录后可以撰写、编辑和管理文章</p>',
-      '  <div class="form-row"><label>密码</label>',
-      '    <input type="password" id="login-pass" placeholder="请输入管理员密码" autocomplete="current-password">',
+      '  <p class="muted">输入密钥密码解锁管理权限</p>',
+      '  <div class="form-row"><label>密钥密码</label>',
+      '    <input type="password" id="login-pass" placeholder="请输入密钥密码" autocomplete="current-password">',
       '  </div>',
       '  <p class="form-error" id="login-error" hidden></p>',
-      '  <button class="btn btn-primary btn-block" id="btn-login">登 录</button>',
-      //'  <p class="hint">默认密码：<code>admin123</code>（可在 blog.js 中修改）</p>',
+      '  <button class="btn btn-primary btn-block" id="btn-login">解 锁</button>',
+      '  <p class="hint" id="login-hint"></p>',
       '</div>'
     ].join('');
     overlay.classList.add('open');
@@ -1732,13 +1823,48 @@
     document.getElementById('btn-login').onclick = function () { doLogin(); };
     input.onkeydown = function (e) { if (e.key === 'Enter') doLogin(); };
 
+    /* 提示当前密文来源，便于排查 */
+    var hint = document.getElementById('login-hint');
+    if (hint) {
+      hint.textContent = secretReady
+        ? '已就绪 · 解密成功即登录管理员'
+        : '正在读取密文…';
+    }
+
     async function doLogin() {
       var btn = document.getElementById('btn-login');
       var err = document.getElementById('login-error');
+      var password = input.value;
+
+      if (!password) {
+        err.hidden = false;
+        err.textContent = '请输入密钥密码';
+        input.focus();
+        return;
+      }
+
       btn.disabled = true;
-      btn.textContent = '验证中…';
-      await delay(500);
-      if (input.value === ADMIN_PASSWORD) {
+      btn.textContent = '解密中…';
+      err.hidden = true;
+
+      try {
+        var bundle = await ensureSecretBundle();
+        if (!bundle) throw new Error('NO_SECRET');
+        // 解密操作较重（PBKDF2），让出主线程以便更新按钮文案
+        await delay(30);
+        var payload = window.BlogCrypto.decrypt(bundle, password);
+
+        // 解密成功 → 登录并取得令牌（令牌只留在本标签页会话中）
+        if (payload && payload.token) {
+          savePat(payload.token, false);
+        }
+        if (payload && payload.owner && payload.repo) {
+          CLOUD_TARGET.owner = payload.owner;
+          CLOUD_TARGET.repo = payload.repo;
+          CLOUD_TARGET.branch = payload.branch || CLOUD_TARGET.branch;
+          CLOUD_TARGET.path = payload.path || CLOUD_TARGET.path;
+        }
+
         state.isAdmin = true;
         sessionStorage.setItem(STORAGE_KEYS.auth, '1');
         closeLogin();
@@ -1746,11 +1872,18 @@
         renderHeader();
         handleRoute();
         if (typeof onSuccess === 'function') onSuccess();
-      } else {
+        // 登录后立即拉取云端最新内容
+        if (getPat()) cloudPull({ quiet: true });
+      } catch (e) {
+        var msg = e.message === 'PASSWORD_OR_TAMPER'
+          ? '密码错误（或密文已被篡改）'
+          : e.message === 'NO_SECRET'
+            ? '未找到密文文件，请先运行 tools/gen-secret.js 生成'
+            : '解密失败：' + e.message;
         err.hidden = false;
-        err.textContent = '密码错误，请重试';
+        err.textContent = msg;
         btn.disabled = false;
-        btn.textContent = '登 录';
+        btn.textContent = '解 锁';
         input.value = '';
         input.focus();
       }
@@ -1765,6 +1898,12 @@
   function logout() {
     state.isAdmin = false;
     sessionStorage.removeItem(STORAGE_KEYS.auth);
+    // 安全要点：退出必须连同解出的令牌一起清除，
+    // 否则共用设备上后续使用者仍可写入仓库。
+    savePat('', false);
+    state.cloud.status = 'idle';
+    state.cloud.message = '';
+    clearTimeout(cloudPushTimer);
     toast('已退出管理员模式', 'info');
     renderHeader();
     handleRoute();
@@ -1803,6 +1942,23 @@
     // 搜索框回填
     var s = document.getElementById('search-input');
     if (s && document.activeElement !== s) s.value = state.query;
+
+    // 云端同步状态指示（仅管理员可见）
+    var cb = document.getElementById('btn-cloud');
+    if (cb) {
+      var has = !!getPat();
+      cb.hidden = !state.isAdmin;
+      var dot = cb.querySelector('.cloud-dot');
+      var cls = state.cloud.status;
+      if (dot) {
+        dot.className = 'cloud-dot' +
+          (!has ? '' : cls === 'error' ? ' bad' : cls === 'syncing' ? ' busy' : ' ok');
+      }
+      cb.title = !has
+        ? '云端未连接 · 点击配置'
+        : ('云端已连接 · ' + (state.cloud.message || cloudStatusLabel()[0]) +
+           (state.cloud.lastSync ? ' · ' + formatDate(state.cloud.lastSync, true) : ''));
+    }
   }
 
   function isDarkNow() {
@@ -1912,6 +2068,19 @@
       document.body.classList.toggle('nav-open');
     });
 
+    /* ---- 导航：云端同步入口 ---- */
+    var cloudBtn = document.getElementById('btn-cloud');
+    if (cloudBtn) {
+      cloudBtn.addEventListener('click', function () {
+        if (!state.isAdmin) { toast('请先登录管理员', 'warning'); openLogin(); return; }
+        navigate('#/about');
+        setTimeout(function () {
+          var panel = document.querySelector('.cloud-panel');
+          if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 80);
+      });
+    }
+
     /* ---- 导航：主题切换 ---- */
     document.getElementById('btn-theme').addEventListener('click', toggleTheme);
 
@@ -1966,6 +2135,45 @@
           case 'import': importData(); return;
           case 'restore-samples': restoreSamples(); return;
           case 'reset-all': resetAll(); return;
+
+          /* --- 云端同步 --- */
+          case 'cloud-connect': cloudConnect(); return;
+          case 'cloud-push': cloudPush({}); return;
+          case 'cloud-pull':
+            confirmBox('从云端拉取会覆盖本地当前的文章与评论，确定继续？').then(function (ok) {
+              if (ok) cloudPull({});
+            });
+            return;
+          case 'cloud-change':
+          case 'cloud-disconnect':
+            confirmBox(action === 'cloud-disconnect'
+              ? '断开后将无法再保存到仓库（本地内容保留），确定断开？'
+              : '将清除本标签页中的令牌，之后可通过密钥密码重新登录获取，确定继续？').then(function (ok) {
+              if (!ok) return;
+              savePat('', false);
+              state.cloud.status = 'idle';
+              state.cloud.message = '已断开云端连接';
+              renderHeader();
+              toast('已断开云端连接', 'info');
+              renderAboutPage();
+            });
+            return;
+          case 'cloud-connect-token':
+            savePat('', false);
+            state.cloud.status = 'idle';
+            state.cloud.message = '请填入新的令牌';
+            renderAboutPage();
+            return;
+          case 'cloud-reveal': {
+            var pin = document.getElementById('cloud-pat');
+            if (pin) {
+              var show = pin.type === 'password';
+              pin.type = show ? 'text' : 'password';
+              el.textContent = show ? '隐藏' : '显示';
+              if (show) pin.focus();
+            }
+            return;
+          }
         }
       }
 
@@ -2195,6 +2403,7 @@
     persistPosts();
     toast(post.pinned ? '文章已置顶' : '已取消置顶', 'success');
     handleRoute();
+    scheduleCloudPush(post.pinned ? '置顶文章' : '取消置顶');
   }
 
   async function deletePost(postId) {
@@ -2211,6 +2420,7 @@
 
     if (state.view === 'post') navigate('#/');
     else handleRoute();
+    scheduleCloudPush('删除文章：' + post.title);
   }
 
   function deleteComment(commentId) {
@@ -2238,6 +2448,7 @@
       persistComments();
       toast('评论已删除', 'success');
       handleRoute();
+      scheduleCloudPush('删除评论');
     });
   }
 
@@ -2469,7 +2680,414 @@
   }
 
   /* =====================================================
-   * 二十一、控制台彩蛋
+   * 二十一、云端同步（GitHub Contents API）
+   * -----------------------------------------------------
+   * 安全模型（重要）：
+   *  1. 仓库与 Pages 站点都是公开的，前端代码里不能放任何密钥
+   *  2. 令牌只保存在管理员自己浏览器的 local / sessionStorage
+   *  3. 写入仓库的唯一凭据就是令牌本身——没有令牌的人，
+   *     即使知道前端密码也无法修改仓库内容
+   *  4. 建议使用 Fine-grained token，仅授权本仓库的
+   *     Contents: Read and write，并设置过期时间
+   * ===================================================== */
+
+  function getCloudTarget() { return CLOUD_TARGET; }
+
+  function cloudMeta() { return load(STORAGE_KEYS.cloud, {}); }
+  function setCloudMeta(patch) { save(STORAGE_KEYS.cloud, Object.assign(cloudMeta(), patch)); }
+
+  /* ---------- 令牌存取（只在本地） ---------- */
+  function getPat() { return state.cloud.pat || ''; }
+
+  function savePat(pat, persist) {
+    state.cloud.pat = pat || '';
+    state.cloud.persistPat = !!persist;
+    if (!pat) {
+      localStorage.removeItem(STORAGE_KEYS.pat);
+      sessionStorage.removeItem(STORAGE_KEYS.pat);
+      return;
+    }
+    if (persist) {
+      localStorage.setItem(STORAGE_KEYS.pat, pat);
+      sessionStorage.removeItem(STORAGE_KEYS.pat);
+    } else {
+      sessionStorage.setItem(STORAGE_KEYS.pat, pat);
+      localStorage.removeItem(STORAGE_KEYS.pat);
+    }
+  }
+
+  /* ---------- UTF-8 安全的 Base64 ---------- */
+  function utf8Bytes(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+    var s = unescape(encodeURIComponent(str));
+    var b = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+    return b;
+  }
+  function bytesToUtf8(bytes) {
+    if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(bytes);
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return decodeURIComponent(escape(s));
+  }
+  function b64EncodeUnicode(str) {
+    var bytes = utf8Bytes(str);
+    var bin = '';
+    var CHUNK = 0x8000;
+    for (var i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+  }
+  function b64DecodeUnicode(b64) {
+    var bin = atob(String(b64 || '').replace(/\s/g, ''));
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytesToUtf8(bytes);
+  }
+
+  /* ---------- GitHub API 封装 ---------- */
+  function cloudApi(path, opts) {
+    opts = opts || {};
+    var t = getCloudTarget();
+    var headers = Object.assign({
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    }, opts.headers || {});
+    var pat = opts.pat || getPat();
+    if (pat) headers.Authorization = 'Bearer ' + pat;
+
+    return fetch(CLOUD_API + '/repos/' + t.owner + '/' + t.repo + '/' + path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      cache: 'no-store'
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        try { json = text ? JSON.parse(text) : null; } catch (e) { /* 非 JSON 响应 */ }
+        if (!res.ok) {
+          var err = new Error((json && json.message) || ('HTTP ' + res.status));
+          err.status = res.status;
+          throw err;
+        }
+        return json;
+      });
+    });
+  }
+
+  /** 校验令牌是否有效且具备写入权限 */
+  function cloudValidate(pat) {
+    var t = getCloudTarget();
+    return fetch(CLOUD_API + '/repos/' + t.owner + '/' + t.repo, {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': 'Bearer ' + pat,
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      cache: 'no-store'
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var j = null;
+        try { j = JSON.parse(text); } catch (e) { j = {}; }
+        if (res.status === 200) {
+          return {
+            ok: true,
+            login: (j.owner && j.owner.login) || t.owner,
+            fullName: j.full_name,
+            canPush: !!(j.permissions && j.permissions.push)
+          };
+        }
+        if (res.status === 401) return { ok: false, reason: '令牌无效或已过期' };
+        if (res.status === 404) return { ok: false, reason: '令牌无权访问该仓库，或仓库不存在' };
+        return { ok: false, reason: (j && j.message) || ('HTTP ' + res.status) };
+      });
+    });
+  }
+
+  /* ---------- 数据序列化 / 应用 ---------- */
+  function serializeData() {
+    return {
+      version: 2,
+      savedAt: Date.now(),
+      posts: state.posts,
+      comments: state.comments,
+      config: getConfig()
+    };
+  }
+
+  function applyCloudData(data, opts) {
+    opts = opts || {};
+    if (!data || !Array.isArray(data.posts)) throw new Error('云端数据格式不正确');
+    state.posts = data.posts;
+    state.comments = Array.isArray(data.comments) ? data.comments : [];
+    if (data.config) setConfig(data.config);
+    persistPosts();
+    persistComments();
+    if (opts.render !== false) { renderHeader(); handleRoute(); }
+  }
+
+  /* ---------- 拉取 ---------- */
+  function cloudPull(opts) {
+    opts = opts || {};
+    var t = getCloudTarget();
+    state.cloud.status = 'syncing';
+    state.cloud.message = '正在读取云端…';
+    if (!opts.quiet) renderHeader();
+
+    var url = 'contents/' + t.path + '?ref=' + encodeURIComponent(t.branch) + '&_=' + Date.now();
+    return cloudApi(url).then(function (res) {
+      if (!res || typeof res.content !== 'string') throw new Error('云端数据文件为空');
+      var data = JSON.parse(b64DecodeUnicode(res.content));
+      state.cloud.sha = res.sha || null;
+      applyCloudData(data, opts);
+      state.cloud.status = 'synced';
+      state.cloud.lastSync = Date.now();
+      state.cloud.lastPullAt = Date.now();
+      state.cloud.message = '已从云端载入 ' + state.posts.length + ' 篇文章';
+      setCloudMeta({ lastSync: state.cloud.lastSync });
+      if (!opts.quiet) { renderHeader(); toast('已从云端拉取最新内容', 'success'); }
+      return { ok: true, data: data };
+    }).catch(function (e) {
+      if (e.status === 404) {
+        state.cloud.status = state.posts.length ? 'synced' : 'offline';
+        state.cloud.message = '云端暂无数据文件（首次上传后生成）';
+        return { ok: false, notFound: true };
+      }
+      state.cloud.status = 'error';
+      state.cloud.message = e.status === 403
+        ? '读取被限流或网络被拦截（请检查 hosts / 代理）'
+        : (e.message || '读取失败');
+      if (!opts.quiet) { renderHeader(); toast('云端载入失败：' + state.cloud.message, 'error'); }
+      return { ok: false, error: e };
+    });
+  }
+
+  /* ---------- 推送 ---------- */
+  function cloudPush(opts) {
+    opts = opts || {};
+    var pat = getPat();
+    if (!pat) {
+      state.cloud.status = 'error';
+      state.cloud.message = '未配置令牌';
+      if (!opts.quiet) toast('请先在「关于 → 云端同步」中连接 GitHub 令牌', 'warning');
+      return Promise.resolve({ ok: false, noToken: true });
+    }
+    if (state.cloud.inFlight) {
+      state.cloud.queued = true;
+      return Promise.resolve({ ok: false, queued: true });
+    }
+
+    var t = getCloudTarget();
+    var text = JSON.stringify(serializeData(), null, 2);
+
+    state.cloud.inFlight = true;
+    state.cloud.status = 'syncing';
+    state.cloud.message = '正在上传…';
+    renderHeader();
+
+    // 先取当前文件 sha（文件可能尚不存在）
+    return cloudApi('contents/' + t.path + '?ref=' + encodeURIComponent(t.branch) + '&_=' + Date.now())
+      .then(function (res) { return res && res.sha; })
+      .catch(function (e) { if (e.status === 404) return null; throw e; })
+      .then(function (sha) {
+        var body = {
+          message: opts.message || ('更新博客数据 · ' + formatDate(Date.now(), true)),
+          content: b64EncodeUnicode(text),
+          branch: t.branch
+        };
+        if (sha) body.sha = sha;
+        else if (state.cloud.sha) body.sha = state.cloud.sha;
+        return cloudApi('contents/' + t.path, { method: 'PUT', body: body });
+      })
+      .then(function (res) {
+        state.cloud.sha = (res && res.content && res.content.sha) || null;
+        state.cloud.lastSync = Date.now();
+        state.cloud.status = 'synced';
+        state.cloud.message = '已同步到仓库';
+        setCloudMeta({ lastSync: state.cloud.lastSync });
+        state.cloud.inFlight = false;
+        renderHeader();
+        if (state.view === 'about' && state.isAdmin) renderAboutPage();
+        if (state.cloud.queued) {
+          state.cloud.queued = false;
+          return cloudPush({ quiet: opts.quiet, message: opts.message });
+        }
+        if (!opts.quiet) toast('✅ 已保存到仓库', 'success');
+        return { ok: true };
+      })
+      .catch(function (e) {
+        state.cloud.inFlight = false;
+        state.cloud.status = 'error';
+        if (e.status === 401 || e.status === 403) {
+          state.cloud.message = '令牌无写入权限或已失效，请更换令牌';
+        } else if (e.status === 409) {
+          state.cloud.message = '云端存在并发修改，请先「从云端拉取」再上传';
+        } else {
+          state.cloud.message = e.message || '上传失败';
+        }
+        renderHeader();
+        if (state.view === 'about' && state.isAdmin) renderAboutPage();
+        toast('同步失败：' + state.cloud.message, 'error', 4200);
+        return { ok: false, error: e };
+      });
+  }
+
+  /** 写入操作后自动上传（防抖合并，未配置令牌时自动跳过，纯本地模式） */
+  var cloudPushTimer = null;
+  function scheduleCloudPush(message) {
+    if (!getPat()) return;              // 未连接云端：保持纯本地
+    clearTimeout(cloudPushTimer);
+    state.cloud.message = '等待上传…';
+    renderHeader();
+    cloudPushTimer = setTimeout(function () {
+      cloudPush({ message: message, quiet: true }).then(function (r) {
+        if (r && r.ok) toast('已同步到仓库 ☁️', 'success', 2000);
+      });
+    }, 1200);
+  }
+
+  /** 首屏后自动拉取云端数据（仓库为数据源，失败则使用本地缓存） */
+  function cloudAutoLoad() {
+    setTimeout(function () {
+      if (Date.now() - state.cloud.lastPullAt < CLOUD_PULL_MIN_INTERVAL) return;
+      if (document.getElementById('editor-overlay').classList.contains('open')) return;
+      cloudPull({ quiet: true }).then(function (r) {
+        if (r.ok && state.view === 'about') renderAboutPage();
+      });
+    }, 0);
+  }
+
+  /* ---------- 云端同步设置面板 ---------- */
+  function cloudStatusLabel() {
+    switch (state.cloud.status) {
+      case 'syncing': return ['同步中…', 'busy'];
+      case 'synced': return ['已同步', 'ok'];
+      case 'error': return ['同步异常', 'bad'];
+      case 'offline': return ['云端暂无数据', 'muted'];
+      default: return [getPat() ? '已连接' : '未连接', getPat() ? 'ok' : 'muted'];
+    }
+  }
+
+  function renderCloudPanel() {
+    var t = getCloudTarget();
+    var hasPat = !!getPat();
+    var st = state.cloud;
+    var lbl = cloudStatusLabel();
+    var repoUrl = 'https://github.com/' + t.owner + '/' + t.repo;
+    var html = '';
+
+    html += '<hr class="soft">';
+    html += '<h2 class="section-title">☁️ 云端同步</h2>';
+    html += '<div class="cloud-panel">';
+
+    /* 状态摘要 */
+    html += '<div class="cloud-grid">';
+    html += '<div><b>仓库</b><a href="' + escapeHtml(repoUrl) + '" target="_blank" rel="noopener">' +
+      escapeHtml(t.owner + '/' + t.repo) + '</a></div>';
+    html += '<div><b>数据文件</b><code>' + escapeHtml(t.path) + '</code></div>';
+    html += '<div><b>密文文件</b><code>' + escapeHtml(SECRET_REMOTE_PATH) + '</code></div>';
+    html += '<div><b>状态</b><span class="cloud-status ' + lbl[1] + '" id="cloud-status-text">' + escapeHtml(lbl[0]) + '</span></div>';
+    html += '<div><b>上次同步</b><span>' + (st.lastSync ? formatDate(st.lastSync, true) : '从未') + '</span></div>';
+    html += '</div>';
+    if (st.message) {
+      html += '<p class="cloud-msg muted" id="cloud-status-msg">' + escapeHtml(st.message) + '</p>';
+    } else {
+      html += '<p class="cloud-msg muted" id="cloud-status-msg"></p>';
+    }
+
+    /* 未连接：手动贴令牌（密文解锁是主路径，这里作为备用） */
+    if (!hasPat) {
+      html += '<div class="cloud-form">';
+      html += '<p class="cloud-tip">正常情况下<b>无需在此填写令牌</b>：用密钥密码登录后会通过解密自动取得。此处的输入框用于密文尚未生成时的临时连接。令牌<b>只保存在你自己的浏览器</b>，不会写入仓库。建议使用 <b>Fine-grained token</b>，仅勾选本仓库的 <code>Contents: Read and write</code> 并设置过期时间。</p>';
+      html += '<div class="form-row"><label>GitHub 令牌（临时）</label>';
+      html += '<div class="pat-input">';
+      html += '<input type="password" id="cloud-pat" placeholder="github_pat_…" autocomplete="off" spellcheck="false">';
+      html += '<button class="btn btn-ghost btn-sm" data-action="cloud-reveal" type="button">显示</button>';
+      html += '</div></div>';
+      html += '<label class="check-label"><input type="checkbox" id="cloud-remember"> 记住令牌（仅本次会话）</label>';
+      html += '<div class="form-foot"><span class="muted">连接成功后会自动拉取云端文章</span>';
+      html += '<button class="btn btn-primary" data-action="cloud-connect" type="button">验证并连接</button></div>';
+      html += '</div>';
+    } else {
+      html += '<div class="cloud-actions">';
+      html += '<button class="btn btn-primary btn-sm" data-action="cloud-push" type="button">⬆ 立即上传</button>';
+      html += '<button class="btn btn-ghost btn-sm" data-action="cloud-pull" type="button">⬇ 从云端拉取</button>';
+      html += '<button class="btn btn-ghost btn-sm" data-action="cloud-connect-token" type="button">更换令牌</button>';
+      html += '<button class="btn btn-danger btn-sm" data-action="cloud-disconnect" type="button">断开连接</button>';
+      html += '</div>';
+      html += '<p class="cloud-tip muted">已连接。文章的发布、编辑、删除、置顶，以及评论和站点设置的变更都会自动上传到仓库。' +
+        '密钥轮换请在本机运行 <code>node tools/gen-secret.js</code>，然后提交 <code>' + escapeHtml(SECRET_REMOTE_PATH) + '</code> 与 <code>blog.js</code>。</p>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  /** 就地更新状态文案，避免整页重渲染打断输入 */
+  function setCloudStatusText(text, cls) {
+    var el = document.getElementById('cloud-status-text');
+    if (el) { el.textContent = text; el.className = 'cloud-status ' + (cls || 'busy'); }
+    var msg = document.getElementById('cloud-status-msg');
+    if (msg) msg.textContent = text;
+  }
+
+  /** 连接流程：验证令牌 → 保存 → 拉取 */
+  function cloudConnect() {
+    var input = document.getElementById('cloud-pat');
+    var remember = document.getElementById('cloud-remember');
+    var pat = input ? input.value.trim() : '';
+
+    if (!pat) { toast('请先填入 GitHub 令牌', 'warning'); input && input.focus(); return; }
+    if (!/^(github_pat_|ghp_|gho_|ghu_|ghs_|ghr_)/.test(pat)) {
+      toast('令牌格式看起来不正确（应以 github_pat_ 或 ghp_ 开头）', 'warning');
+      input && input.focus();
+      return;
+    }
+
+    state.cloud.status = 'syncing';
+    state.cloud.message = '正在验证令牌…';
+    setCloudStatusText('正在验证令牌…', 'busy');
+
+    cloudValidate(pat).then(function (r) {
+      if (!r.ok) {
+        state.cloud.status = 'error';
+        state.cloud.message = r.reason;
+        setCloudStatusText('连接失败：' + r.reason, 'bad');
+        toast('连接失败：' + r.reason, 'error');
+        return;
+      }
+      if (!r.canPush) {
+        state.cloud.status = 'error';
+        state.cloud.message = '令牌缺少写入权限';
+        setCloudStatusText('令牌缺少写入权限', 'bad');
+        toast('该令牌没有写入权限，需要 Contents: Read and write', 'error', 4200);
+        return;
+      }
+      savePat(pat, !!(remember && remember.checked));
+      state.cloud.status = 'synced';
+      state.cloud.message = '令牌验证通过（' + r.login + '）';
+      toast('已连接云端 ✅', 'success');
+      renderHeader();
+      cloudPull({ quiet: true }).then(function (res) {
+        if (res && res.notFound) {
+          // 云端还没有数据文件：把本地内容作为初始版本上传
+          toast('云端暂无数据，正在上传本地内容…', 'info');
+          cloudPush({ message: '初始化博客数据', quiet: false });
+        }
+        if (state.view === 'about') renderAboutPage();
+      });
+      if (state.view === 'about') renderAboutPage();
+    }).catch(function (e) {
+      state.cloud.status = 'error';
+      state.cloud.message = '网络错误：' + (e.message || e);
+      setCloudStatusText('网络错误，无法访问 api.github.com', 'bad');
+      toast('连接失败：请检查网络或 hosts 是否屏蔽了 api.github.com', 'error', 5000);
+    });
+  }
+
+  /* =====================================================
+   * 二十二、控制台彩蛋
    * ===================================================== */
   function consoleEasterEgg() {
     try {
@@ -2483,11 +3101,17 @@
       console.log('  Blog.reset()     清空所有本地数据');
       console.log('  Blog.posts()     打印文章列表');
       console.log('  Blog.theme()     切换亮 / 暗主题');
+      console.log('%c云端同步：', 'color:#6c5ce7;font-weight:bold;');
+      console.log('  Blog.cloud.status()              查看云端连接状态');
+      console.log('  Blog.cloud.unlock("密码")        用密钥密码解锁（等同登录）');
+      console.log('  Blog.cloud.push()                上传本地内容到仓库');
+      console.log('  Blog.cloud.pull()                从仓库拉取内容');
+      console.log('  Blog.cloud.disconnect()          清除本标签页令牌');
     } catch (e) { /* ignore */ }
   }
 
   /* =====================================================
-   * 二十二、初始化
+   * 二十三、初始化
    * ===================================================== */
   function init() {
     ensureData();
@@ -2497,6 +3121,10 @@
     bindGlobalEvents();
     handleRoute();
     consoleEasterEgg();
+    cloudAutoLoad();
+
+    // 提前预取密文，让登录框能立刻响应
+    ensureSecretBundle().catch(function () { /* 未部署密文时静默 */ });
 
     // 未读草稿提醒
     var drafts = load(STORAGE_KEYS.drafts, {});
@@ -2507,7 +3135,7 @@
 
   // 暴露调试 API
   window.Blog = {
-    version: '1.0.0',
+    version: '2.0.0',
     export: function () { return { posts: state.posts, comments: state.comments, config: getConfig() }; },
     download: exportData,
     reset: resetAll,
@@ -2515,7 +3143,64 @@
       return { id: p.id, title: p.title, status: p.status, views: p.views, likes: p.likes };
     })); },
     theme: toggleTheme,
-    openEditor: openEditor
+    openEditor: openEditor,
+    cloud: {
+      /** 用密钥密码解锁，返回解密出的仓库信息（不含令牌本身） */
+      unlock: function (password) {
+        return ensureSecretBundle().then(function (bundle) {
+          if (!bundle) throw new Error('未找到密文');
+          var payload = window.BlogCrypto.decrypt(bundle, password);
+          if (payload && payload.token) savePat(payload.token, false);
+          if (payload && payload.owner && payload.repo) {
+            CLOUD_TARGET.owner = payload.owner;
+            CLOUD_TARGET.repo = payload.repo;
+            CLOUD_TARGET.branch = payload.branch || CLOUD_TARGET.branch;
+            CLOUD_TARGET.path = payload.path || CLOUD_TARGET.path;
+          }
+          state.isAdmin = true;
+          sessionStorage.setItem(STORAGE_KEYS.auth, '1');
+          state.cloud.status = 'synced';
+          state.cloud.message = '已通过密钥密码解锁';
+          renderHeader();
+          return { ok: true, owner: payload.owner, repo: payload.repo, hasToken: !!payload.token };
+        });
+      },
+      /** 校验并保存令牌（密文未生成时的备用路径） */
+      connect: function (pat, persist) {
+        return cloudValidate(pat).then(function (r) {
+          if (r.ok && r.canPush) {
+            savePat(pat, !!persist);
+            state.cloud.status = 'synced';
+            state.cloud.message = '令牌验证通过（' + r.login + '）';
+            renderHeader();
+          }
+          return r;
+        });
+      },
+      /** 上传本地内容到仓库 */
+      push: function (message) { return cloudPush({ message: message }); },
+      /** 从仓库拉取内容 */
+      pull: function () { return cloudPull({}); },
+      /** 当前同步状态 */
+      status: function () {
+        var t = getCloudTarget();
+        return {
+          connected: !!getPat(),
+          status: state.cloud.status,
+          message: state.cloud.message,
+          lastSync: state.cloud.lastSync ? formatDate(state.cloud.lastSync, true) : null,
+          target: t.owner + '/' + t.repo + '@' + t.branch + '/' + t.path
+        };
+      },
+      /** 断开并清除本地令牌 */
+      disconnect: function () {
+        savePat('', false);
+        state.cloud.status = 'idle';
+        state.cloud.message = '';
+        renderHeader();
+        return true;
+      }
+    }
   };
 
   // DOM 就绪后启动
