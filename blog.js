@@ -42,7 +42,7 @@
    * 密文由 tools/gen-secret.js 生成，请勿手工编辑。
    * 同步的一份放在仓库根目录 secret.json（内容相同，供在线版读取）。
    * --------------------------------------------------------------- */
-  var EMBEDDED_SECRET = {"v":1,"alg":"PBKDF2-HMAC-SHA256 + HMAC-SHA256-CTR + HMAC-SHA256(encrypt-then-MAC)","kdf":{"name":"PBKDF2-HMAC-SHA256","salt":"ngetrf0WQk05YQFN/CofXQ==","iterations":150000},"iv":"OmA/0xsJej3jw8MoqqGF3w==","ct":"TuTfb3xKcKEuxpTt+9cIIt2ILKNfr2QiIiQlVL/gDJ8WV1+hFDyCV+1hv55oeHqlrAzfJR9Xgrw4HZl7rJSRPDqJBm772CvR+MZaTaseUvi2btCw+0VHwtaTdGV9fauNST/fgHQQvqUqmbaJBsL3AkhKEa1ffUtLQviBH+38q7DB5jLLQilPhj3Yubkrn0CKIk22ls6MagVyd8LUOVWsXrWkNwUfm2I3cj/LbPlQH+EYyL5OJ3Th/YiRkaY5utYErxwRUxvtp8n2JYil8CqOD0e3pUIMTABMS9myKhTBcYw=","mac":"KsLzMrfDudJKHtoJgEZo0u07sx7Jy/lzidCpgCt/3TI=","created":"2026-10-10T12:07:19.896Z"};   // 由 tools/gen-secret.js 生成，仅含密文
+  var EMBEDDED_SECRET = {"v":1,"alg":"PBKDF2-HMAC-SHA256 + HMAC-SHA256-CTR + HMAC-SHA256(encrypt-then-MAC)","kdf":{"name":"PBKDF2-HMAC-SHA256","salt":"ayAnM7i8JV3pkQ20CiLWDA==","iterations":150000},"iv":"VkPg2Dr/78whJOMB/LNB/A==","ct":"i3IbB1mccYd/f4AAdD4rRcRkYWg1aFSMgOieRMGEiLMlwcekKopMWHmpD4hdkRJISjjYVur0milcpoF3yfxSkRtZxCqs/QclDFABAicy6Afb1QbqeQFA0vrwi+/KmwwGGJXPY5EAcnEDK17NeG81N0eYtFk1zYMt5Z7SXS4AiXvnrg1/x5nd9fVUNcdOgcBK9eVNzJKdULqxsjKVCOHtBflqR8MFc74+N8ZjHipk1t4cn211yxJ0sAJnA38J2xaPF6rs4t752VmatWFIop2SddTEYelwjiDzCpOGa/1UPJc=","mac":"TgnckHymrDbJeQ2Hu5IdSpm6A2pORc4RlFJGmknxbf4=","created":"2026-10-10T12:13:10.919Z"};   // 由 tools/gen-secret.js 生成，仅含密文
   var SECRET_REMOTE_PATH = 'secret.json';
 
   /* 云端数据仓库：文章数据以该文件为准 */
