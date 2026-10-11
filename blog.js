@@ -824,6 +824,7 @@
     if (!parts.length) return { name: 'home' };
     if (parts[0] === 'post' && parts[1]) return { name: 'post', id: parts[1] };
     if (parts[0] === 'about') return { name: 'about' };
+    if (parts[0] === 'drafts') return { name: 'drafts' };
     if (parts[0] === 'search') return { name: 'home', query: parts[1] || '' };
     return { name: 'home' };
   }
@@ -858,6 +859,18 @@
     if (r.name === 'about') {
       state.view = 'about';
       renderAboutPage();
+      return;
+    }
+
+    if (r.name === 'drafts') {
+      if (!state.isAdmin) {
+        state.view = 'home';
+        renderHomePage();
+        openLogin(function () { navigate('#/drafts'); });
+        return;
+      }
+      state.view = 'drafts';
+      renderDraftsPage();
       return;
     }
 
@@ -980,7 +993,7 @@
         '<p>没有找到匹配的文章</p>' +
         (state.query || state.category !== '全部' || state.tag
           ? '<button class="btn btn-primary btn-sm" data-action="clear-filter">清除筛选条件</button>'
-          : (state.isAdmin ? '<button class="btn btn-primary btn-sm" data-action="new-post">写第一篇文章</button>' : '')) +
+          : (state.isAdmin ? '<button class="btn btn-primary btn-sm" data-action="new-draft">写第一篇文章</button>' : '')) +
         '</div>';
     } else {
       html += '<div class="post-cards">';
@@ -1482,10 +1495,304 @@
   }
 
   /* =====================================================
+   * 十二·五、草稿箱（只列出未发布的草稿）
+   * ===================================================== */
+
+  /** 全部草稿（status==='draft'），按最近修改倒序 */
+  function getDrafts() {
+    return state.posts
+      .filter(function (p) { return p.status === 'draft'; })
+      .sort(function (a, b) {
+        return (b.updated || b.created || 0) - (a.updated || a.created || 0);
+      });
+  }
+
+  /** 旧的单份临时草稿（编辑器自动保存产生，尚未成为正式草稿） */
+  function getTempDraft() {
+    var d = load(STORAGE_KEYS.drafts, {});
+    return (d && d.content && String(d.content).trim()) ? d : null;
+  }
+
+  /** 为新分支生成不重复的标题 */
+  function branchTitle(base) {
+    var name = String(base || '未命名草稿').trim() || '未命名草稿';
+    // 已是「… · 分支N」时递增 N
+    var m = name.match(/^(.*) · 分支(\d*)$/);
+    var stem = m ? m[1] : name;
+    var n = m ? (parseInt(m[2] || '1', 10) || 1) + 1 : 1;
+    var used = {};
+    state.posts.forEach(function (p) { used[p.title] = true; });
+    var title = stem + ' · 分支' + n;
+    while (used[title]) { n++; title = stem + ' · 分支' + n; }
+    return title;
+  }
+
+  /**
+   * 基于某篇草稿新建分支：复制其内容为新草稿（相当于另存）
+   * @returns {Object|null} 新建的草稿
+   */
+  function branchDraft(postId, opts) {
+    opts = opts || {};
+    var src = state.posts.find(function (p) { return p.id === postId; });
+    if (!src) { toast('草稿不存在', 'error'); return null; }
+
+    var copy = {
+      id: uid('post'),
+      title: branchTitle(src.title),
+      category: src.category,
+      tags: (src.tags || []).slice(),
+      cover: src.cover || '',
+      pinned: false,
+      status: 'draft',
+      likes: 0,
+      views: 0,
+      created: Date.now(),
+      updated: Date.now(),
+      content: src.content,
+      branchedFrom: src.id
+    };
+    state.posts.unshift(copy);
+    persistPosts();
+    renderHeader();
+    scheduleCloudPush('新建草稿分支：' + copy.title);
+    return copy;
+  }
+
+  /** 草稿箱页面 */
+  function renderDraftsPage() {
+    var app = document.getElementById('app');
+    var drafts = getDrafts();
+    var temp = getTempDraft();
+    var html = '';
+
+    html += '<div class="container narrow drafts-page">';
+
+    /* 页头 */
+    html += '<header class="drafts-head reveal">';
+    html += '<div>';
+    html += '<h1 class="drafts-title">📝 草稿箱</h1>';
+    html += '<p class="muted">共 ' + drafts.length + ' 篇未发布草稿' +
+      (temp ? ' · 1 份临时草稿' : '') + '</p>';
+    html += '</div>';
+    html += '<button class="btn btn-primary" data-action="new-draft">＋ 新建草稿</button>';
+    html += '</header>';
+
+    /* 临时草稿（编辑器自动保存、尚未转正） */
+    if (temp) {
+      html += '<div class="draft-card temp reveal">';
+      html += '<div class="draft-card-main">';
+      html += '<div class="draft-card-top">';
+      html += '<span class="draft-badge-inline">临时草稿</span>';
+      html += '<span class="muted">' + escapeHtml(temp.saved ? timeAgo(temp.saved) : '未保存时间') + '</span>';
+      html += '</div>';
+      html += '<h3 class="draft-card-title">' + escapeHtml(temp.title || '（未命名）') + '</h3>';
+      html += '<p class="draft-card-excerpt">' + escapeHtml(makeExcerpt(temp.content, 110)) + '</p>';
+      html += '<div class="draft-card-meta">';
+      html += '<span>' + formatNumber(countWords(temp.content)) + ' 字</span>';
+      html += '<span>约 ' + readingMinutes(temp.content) + ' 分钟</span>';
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="draft-card-actions">';
+      html += '<button class="btn btn-primary btn-sm" data-action="edit-temp-draft">继续编辑</button>';
+      html += '<button class="btn btn-ghost btn-sm" data-action="save-temp-as-draft">转为草稿</button>';
+      html += '<button class="btn btn-ghost btn-sm btn-danger" data-action="discard-temp-draft">丢弃</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    /* 正式草稿列表 */
+    if (!drafts.length && !temp) {
+      html += '<div class="empty-state reveal">' +
+        '<div class="empty-icon">🗂️</div>' +
+        '<p>草稿箱是空的</p>' +
+        '<button class="btn btn-primary btn-sm" data-action="new-draft">开始写第一篇草稿</button>' +
+        '</div>';
+    } else if (drafts.length) {
+      html += '<div class="draft-list">';
+      drafts.forEach(function (p, idx) {
+        html += draftCard(p, idx);
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+
+    app.innerHTML = html;
+    afterRender();
+  }
+
+  /** 单张草稿卡片 */
+  function draftCard(p, idx) {
+    var words = countWords(p.content);
+    var tags = (p.tags || []);
+    var hasBranch = state.posts.some(function (x) { return x.branchedFrom === p.id; });
+
+    var html = '';
+    html += '<article class="draft-card reveal" style="--d:' + (idx % 6) + '">';
+    html += '<div class="draft-card-main">';
+
+    html += '<div class="draft-card-top">';
+    html += '<span class="draft-badge-inline">草稿</span>';
+    if (hasBranch) html += '<span class="draft-badge-inline branch">有分支</span>';
+    html += '<span class="muted">更新于 ' + escapeHtml(timeAgo(p.updated || p.created)) + '</span>';
+    html += '</div>';
+
+    html += '<h3 class="draft-card-title">' + escapeHtml(p.title) + '</h3>';
+    html += '<p class="draft-card-excerpt">' + escapeHtml(makeExcerpt(p.content, 110)) + '</p>';
+
+    html += '<div class="draft-card-meta">';
+    html += '<span>' + escapeHtml(p.category || '未分类') + '</span>';
+    html += '<span>' + formatNumber(words) + ' 字</span>';
+    html += '<span>约 ' + readingMinutes(p.content) + ' 分钟</span>';
+    if (tags.length) {
+      html += '<span class="draft-tags">' + tags.slice(0, 3).map(function (t) {
+        return '#' + escapeHtml(t);
+      }).join(' ') + (tags.length > 3 ? ' +' + (tags.length - 3) : '') + '</span>';
+    }
+    html += '</div>';
+
+    html += '</div>';
+
+    /* 操作区 */
+    html += '<div class="draft-card-actions">';
+    html += '<button class="btn btn-primary btn-sm" data-edit="' + p.id + '">继续编辑</button>';
+    html += '<button class="btn btn-ghost btn-sm" data-branch="' + p.id + '" title="以当前内容另存为新草稿">新建分支</button>';
+    html += '<button class="btn btn-ghost btn-sm" data-publish-draft="' + p.id + '">发布</button>';
+    html += '<button class="btn btn-ghost btn-sm btn-danger" data-delete="' + p.id + '">删除</button>';
+    html += '</div>';
+
+    html += '</article>';
+    return html;
+  }
+
+  /** 草稿箱：发布某篇草稿 */
+  function publishDraft(postId) {
+    var p = state.posts.find(function (x) { return x.id === postId; });
+    if (!p) { toast('草稿不存在', 'error'); return; }
+    confirmBox('确定发布《' + p.title + '》吗？发布后将出现在首页。').then(function (ok) {
+      if (!ok) return;
+      p.status = 'published';
+      p.updated = Date.now();
+      persistPosts();
+      renderHeader();
+      toast('文章已发布 🎉', 'success');
+      scheduleCloudPush('发布文章：' + p.title);
+      navigate('#/post/' + p.id);
+    });
+  }
+
+  /** 临时草稿 → 打开编辑器继续写（保留在 localStorage 中） */
+  function editTempDraft() {
+    var temp = getTempDraft();
+    if (!temp) { toast('临时草稿已不存在', 'warning'); return; }
+    openEditor(null, temp);
+  }
+
+  /** 临时草稿 → 转为正式草稿 */
+  function saveTempAsDraft() {
+    var temp = getTempDraft();
+    if (!temp) { toast('临时草稿已不存在', 'warning'); return; }
+    var content = String(temp.content || '');
+    var p = {
+      id: uid('post'),
+      title: (temp.title || '').trim() || '未命名草稿',
+      category: (temp.category || '').trim() || '未分类',
+      tags: String(temp.tags || '').split(/[,，、\s]+/).filter(Boolean).slice(0, 8),
+      cover: '',
+      pinned: false,
+      status: 'draft',
+      likes: 0,
+      views: 0,
+      created: Date.now(),
+      updated: Date.now(),
+      content: content
+    };
+    state.posts.unshift(p);
+    persistPosts();
+    localStorage.removeItem(STORAGE_KEYS.drafts);
+    renderHeader();
+    toast('已转为草稿：' + p.title, 'success');
+    scheduleCloudPush('保存草稿：' + p.title);
+    if (state.view === 'drafts') renderDraftsPage();
+  }
+
+  /** 丢弃临时草稿 */
+  function discardTempDraft() {
+    confirmBox('确定丢弃这份临时草稿吗？此操作不可恢复。').then(function (ok) {
+      if (!ok) return;
+      localStorage.removeItem(STORAGE_KEYS.drafts);
+      renderHeader();
+      toast('已丢弃临时草稿', 'success');
+      if (state.view === 'drafts') renderDraftsPage();
+    });
+  }
+
+  /* =====================================================
    * 十三、写文章 / 编辑器
    * ===================================================== */
-  function openEditor(postId) {
-    if (!state.isAdmin) { openLogin(function () { openEditor(postId); }); return; }
+
+  /**
+   * 编辑器内「新建分支」：
+   * 先把当前编辑内容写回原草稿（避免丢改动），再以相同内容复制出一篇新草稿，
+   * 然后把编辑器切到新草稿上继续编辑 —— 相当于另存 / git branch。
+   */
+  function branchFromEditor() {
+    if (!state.editingId) { toast('请先保存为草稿再新建分支', 'warning'); return; }
+    var src = state.posts.find(function (p) { return p.id === state.editingId; });
+    if (!src) { toast('草稿不存在', 'error'); return; }
+
+    var title = (document.getElementById('e-title').value || '').trim();
+    var category = (document.getElementById('e-category').value || '').trim() || '未分类';
+    var tagsRaw = (document.getElementById('e-tags').value || '').trim();
+    var content = document.getElementById('e-content').value;
+    var pinned = document.getElementById('e-pinned').checked;
+
+    if (!title) { toast('请先填写标题', 'warning'); document.getElementById('e-title').focus(); return; }
+    if (!content.trim()) { toast('内容为空，无法新建分支', 'warning'); document.getElementById('e-content').focus(); return; }
+
+    var tags = tagsRaw.split(/[,，、\s]+/).filter(Boolean).slice(0, 8);
+
+    // 1) 当前编辑内容写回原草稿，确保不丢改动
+    src.title = title;
+    src.category = category;
+    src.tags = tags;
+    src.content = content;
+    src.pinned = pinned;
+    src.updated = Date.now();
+
+    // 2) 复制出新草稿（内容相同，标题带「分支」标记）
+    var copy = {
+      id: uid('post'),
+      title: branchTitle(title),
+      category: category,
+      tags: tags.slice(),
+      cover: src.cover || '',
+      pinned: false,
+      status: 'draft',
+      likes: 0,
+      views: 0,
+      created: Date.now(),
+      updated: Date.now(),
+      content: content,
+      branchedFrom: src.id
+    };
+    state.posts.unshift(copy);
+    persistPosts();
+    renderHeader();
+    scheduleCloudPush('新建草稿分支：' + copy.title);
+
+    // 3) 编辑器切到新分支继续编辑
+    openEditor(copy.id);
+    toast('已新建分支：' + copy.title, 'success');
+  }
+
+  /**
+   * 打开编辑器
+   * @param {string|null} postId 文章 id；null 表示新建
+   * @param {Object} [preset] 新建时的预填内容 {title, category, tags, content}
+   */
+  function openEditor(postId, preset) {
+    if (!state.isAdmin) { openLogin(function () { openEditor(postId, preset); }); return; }
 
     state.editingId = postId || null;
     var post = postId ? state.posts.find(function (p) { return p.id === postId; }) : null;
@@ -1497,9 +1804,17 @@
     var content = post ? post.content : '';
     var pinned = post && post.pinned;
 
-    // 恢复未发布的本地草稿（仅新建时）
+    // 新建时可用 preset 预填（例如把临时草稿转入编辑器）
+    if (!post && preset) {
+      title = preset.title || '';
+      cat = preset.category || '';
+      tags = typeof preset.tags === 'string' ? preset.tags : (preset.tags || []).join(', ');
+      content = preset.content || '';
+    }
+
+    // 恢复未发布的本地草稿（仅新建且无 preset 时）
     var drafts = load(STORAGE_KEYS.drafts, {});
-    if (!post && drafts.title) {
+    if (!post && !preset && drafts.title) {
       title = drafts.title; cat = drafts.category || '';
       tags = drafts.tags || ''; content = drafts.content || '';
       toast('已恢复上次未发布的草稿', 'info');
@@ -1510,8 +1825,9 @@
     overlay.innerHTML = [
       '<div class="editor-panel" role="dialog" aria-modal="true" aria-label="写文章">',
       '  <header class="editor-head">',
-      '    <h3>' + (post ? '✏️ 编辑文章' : '📝 写文章') + '</h3>',
+      '    <h3>' + (post ? (post.status === 'draft' ? '📝 编辑草稿' : '✏️ 编辑文章') : '📝 写文章') + '</h3>',
       '    <div class="editor-head-actions">',
+      post ? '      <button class="btn btn-ghost btn-sm" data-action="branch-editor" title="以当前内容另存为新草稿">🌿 新建分支</button>' : '',
       '      <button class="btn btn-ghost btn-sm" data-action="close-editor">取消</button>',
       '      <button class="btn btn-ghost btn-sm" data-action="save-draft">存草稿</button>',
       '      <button class="btn btn-primary btn-sm" data-action="publish">' + (post && post.status === 'published' ? '保存修改' : '发布文章') + '</button>',
@@ -1583,6 +1899,10 @@
     overlay.classList.remove('open');
     document.body.classList.remove('no-scroll');
     state.editingId = null;
+
+    // 手动关闭且处于草稿箱视图时刷新列表，让新建的分支/改动立即出现
+    // （force=true 表示发布/存草稿等程序化关闭，由调用方决定后续渲染）
+    if (!force && state.view === 'drafts') renderDraftsPage();
   }
 
   function initEditorEvents() {
@@ -1709,11 +2029,13 @@
       post.content = content;
       post.pinned = pinned;
       post.updated = Date.now();
-      if (asDraft) post.status = 'draft';
+      // 点「发布文章」= 正式发布；点「存草稿」= 退回草稿状态
+      post.status = asDraft ? 'draft' : 'published';
       persistPosts();
       closeEditor(true);
       toast(asDraft ? '已保存为草稿' : '文章已更新', 'success');
-      handleRoute();
+      if (state.view === 'drafts') renderDraftsPage();
+      else handleRoute();
       scheduleCloudPush('更新文章：' + title);
       return;
     }
@@ -1739,7 +2061,8 @@
 
     if (asDraft) {
       toast('已保存到草稿箱', 'success');
-      renderHomePage();
+      if (state.view === 'drafts') renderDraftsPage();
+      else renderHomePage();
     } else {
       toast('文章发布成功 🎉', 'success');
       navigate('#/post/' + np.id);
@@ -1921,9 +2244,8 @@
 
     nav.innerHTML = [
       '<a class="nav-link" href="#/" data-nav="home">首页</a>',
-      '<a class="nav-link" href="#/about" data-nav="about">关于</a>',
-      state.isAdmin
-        ? '<button class="nav-link nav-btn" data-action="new-post">✍️ 写文章' +
+      '<a class="nav-link" href="#/about" data-nav="about">关于</a>',      state.isAdmin
+        ? '<button class="nav-link nav-btn" data-action="open-drafts">✍️ 写文章' +
           (draftCount ? '<em class="dot-badge">' + draftCount + '</em>' : '') + '</button>'
         : '',
       state.isAdmin
@@ -2113,10 +2435,16 @@
         switch (action) {
           case 'login': openLogin(); return;
           case 'logout': logout(); return;
-          case 'new-post': openEditor(null); return;
+          case 'open-drafts': navigate('#/drafts'); return;
+          case 'new-post':
+          case 'new-draft': openEditor(null); return;
           case 'close-editor': closeEditor(); return;
           case 'publish': publishPost(false); return;
           case 'save-draft': publishPost(true); return;
+          case 'branch-editor': branchFromEditor(); return;
+          case 'edit-temp-draft': editTempDraft(); return;
+          case 'save-temp-as-draft': saveTempAsDraft(); return;
+          case 'discard-temp-draft': discardTempDraft(); return;
           case 'close-login': closeLogin(); return;
           case 'toggle-preview': togglePreview(); return;
           case 'clear-filter':
@@ -2231,6 +2559,21 @@
       /* --- 文章点赞 --- */
       if ((el = t.closest('[data-like]'))) {
         toggleLike(el.getAttribute('data-like'));
+        return;
+      }
+
+      /* --- 草稿箱：新建分支 / 发布草稿 --- */
+      if ((el = t.closest('[data-branch]'))) {
+        var bsrc = el.getAttribute('data-branch');
+        var ncopy = branchDraft(bsrc);
+        if (ncopy) {
+          toast('已新建分支：' + ncopy.title, 'success');
+          openEditor(ncopy.id);
+        }
+        return;
+      }
+      if ((el = t.closest('[data-publish-draft]'))) {
+        publishDraft(el.getAttribute('data-publish-draft'));
         return;
       }
 
@@ -2409,18 +2752,22 @@
   async function deletePost(postId) {
     var post = state.posts.find(function (p) { return p.id === postId; });
     if (!post) return;
-    var ok = await confirmBox('确定删除《' + post.title + '》吗？该文章的所有评论也会一并删除，此操作不可恢复。');
+    var isDraft = post.status === 'draft';
+    var ok = await confirmBox(isDraft
+      ? '确定删除草稿《' + post.title + '》吗？此操作不可恢复。'
+      : '确定删除《' + post.title + '》吗？该文章的所有评论也会一并删除，此操作不可恢复。');
     if (!ok) return;
 
     state.posts = state.posts.filter(function (p) { return p.id !== postId; });
     state.comments = state.comments.filter(function (c) { return c.postId !== postId; });
     persistPosts();
     persistComments();
-    toast('文章已删除', 'success');
+    toast(isDraft ? '草稿已删除' : '文章已删除', 'success');
 
-    if (state.view === 'post') navigate('#/');
+    if (state.view === 'drafts') renderDraftsPage();
+    else if (state.view === 'post') navigate('#/');
     else handleRoute();
-    scheduleCloudPush('删除文章：' + post.title);
+    scheduleCloudPush((isDraft ? '删除草稿：' : '删除文章：') + post.title);
   }
 
   function deleteComment(commentId) {
@@ -2609,7 +2956,8 @@
     document.querySelectorAll('.nav-link').forEach(function (a) {
       a.classList.toggle('active',
         (a.getAttribute('data-nav') === 'home' && state.view === 'home') ||
-        (a.getAttribute('data-nav') === 'about' && state.view === 'about'));
+        (a.getAttribute('data-nav') === 'about' && state.view === 'about') ||
+        (a.getAttribute('data-action') === 'open-drafts' && state.view === 'drafts'));
     });
 
     // 图片加载失败兜底

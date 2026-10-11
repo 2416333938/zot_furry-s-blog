@@ -79,7 +79,7 @@ if (!PASSWORD) { console.error('需要 BLOG_TEST_PASSWORD 环境变量'); proces
   ok($('#login-overlay').classList.contains('open'), '错误密码后仍停留在登录框');
   ok(!$('#login-error').hidden, '显示错误提示');
   ok(/密码错误|PASSWORD_OR_TAMPER|解密/.test($('#login-error').textContent), '提示文案：' + $('#login-error').textContent);
-  ok($$('#nav-menu [data-action="new-post"]').length === 0, '错误密码未获得管理员权限');
+  ok($$('#nav-menu [data-action="open-drafts"]').length === 0, '错误密码未获得管理员权限');
 
   console.log('[4] 正确密码应解锁并取得令牌');
   $('#login-pass').value = PASSWORD;
@@ -87,7 +87,7 @@ if (!PASSWORD) { console.error('需要 BLOG_TEST_PASSWORD 环境变量'); proces
   await tick(1500);
 
   ok(!$('#login-overlay').classList.contains('open'), '登录弹层已关闭');
-  ok($$('#nav-menu [data-action="new-post"]').length === 1, '已获得写文章入口');
+  ok($$('#nav-menu [data-action="open-drafts"]').length === 1, '已获得写文章入口');
   ok($$('#nav-menu [data-action="logout"]').length === 1, '已获得退出入口');
 
   const st = window.Blog.cloud.status();
@@ -101,7 +101,10 @@ if (!PASSWORD) { console.error('需要 BLOG_TEST_PASSWORD 环境变量'); proces
   ok(!localTok, '令牌未写入 localStorage（更安全）');
 
   console.log('[5] 登录后可正常发文章（本地路径）');
-  click($('#nav-menu [data-action="new-post"]'));
+  // 「写文章」现在先进入草稿箱，再从草稿箱新建
+  click($('#nav-menu [data-action="open-drafts"]'));
+  await tick(120);
+  click($('.drafts-page [data-action="new-draft"]'));
   await tick(100);
   ok($('#editor-overlay').classList.contains('open'), '编辑器打开');
   $('#e-title').value = '加密登录测试文章';
