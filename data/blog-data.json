@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "savedAt": 1791690335460,
+  "savedAt": 1791690352677,
   "posts": [
     {
       "id": "post_mv3a1q0hcuo8a",
@@ -58,7 +58,7 @@
       "pinned": true,
       "status": "published",
       "likes": 12,
-      "views": 108,
+      "views": 110,
       "created": 1791546334351,
       "updated": 1791546334351,
       "content": "你好，欢迎来到我的个人博客！这是一个**纯前端实现**的博客系统，所有数据都保存在浏览器的 `localStorage` 中，无需任何后端服务。\n\n## 这个博客能做什么\n\n- 📝 完整的文章管理：发布、编辑、删除、置顶、草稿\n- 🏷️ 分类与标签筛选，支持全文搜索\n- 💬 评论系统：楼中楼回复、点赞\n- 🌗 亮色 / 暗色主题切换\n- 📱 响应式布局，手机也能舒服阅读\n- 💾 数据导入导出，换电脑不丢内容\n\n## 快速上手\n\n1. 点击右上角 **写文章** 即可创建新内容（需管理员登录）\n2. 在关于页面可以修改站点信息\n3. 底部工具区支持导出全部数据为 JSON 文件\n\n> 提示：管理员登录使用密钥密码解密，明文密码不保存在代码或仓库中。\n\n祝你写得开心！"
@@ -133,26 +133,6 @@
     }
   ],
   "comments": [
-    {
-      "id": "c_1",
-      "postId": "post_welcome",
-      "parentId": null,
-      "nickname": "小明",
-      "content": "博客写得很不错，界面很清爽！",
-      "likes": 3,
-      "admin": false,
-      "created": 1791560734351
-    },
-    {
-      "id": "c_2",
-      "postId": "post_welcome",
-      "parentId": "c_1",
-      "nickname": "博主",
-      "content": "谢谢支持，欢迎常来～",
-      "likes": 1,
-      "admin": true,
-      "created": 1791564334351
-    },
     {
       "id": "c_3",
       "postId": "post_js_guide",
