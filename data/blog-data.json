@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "savedAt": 1791690291138,
+  "savedAt": 1791690335460,
   "posts": [
     {
       "id": "post_mv3a1q0hcuo8a",
@@ -165,9 +165,9 @@
     }
   ],
   "config": {
-    "siteName": "My Blog",
+    "siteName": "zot的博客",
     "slogan": "记录 · 思考 · 分享",
-    "author": "博主",
+    "author": "zot",
     "avatar": "",
     "bio": "一个热爱技术与生活的普通人，这里是我的自留地。",
     "github": "",
