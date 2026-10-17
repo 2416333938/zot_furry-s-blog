@@ -1406,16 +1406,23 @@
       showGiscusFallback(container, g, '网络问题导致评论组件加载失败');
     };
 
-    // 监听 giscus 的 postMessage：App 未安装 / 配置错误时给出明确指引，
-    // 否则 iframe 会一直停在「正在加载评论…」
+    // 监听 giscus 的 postMessage：仅对「真正致命」的错误给出降级提示。
+    // 注意：Discussion not found 属于正常状态（首条评论会自动建帖），
+    // 不能当成错误，否则会把可用的评论区误判成「加载失败」。
     if (!window.__giscusMsgBound) {
       window.__giscusMsgBound = true;
       window.addEventListener('message', function (e) {
         if (e.origin !== 'https://giscus.app') return;
         var d = e.data && e.data.giscus;
         if (!d || !d.error) return;
+
+        var reason = String(d.error);
+        // 非致命：讨论尚未创建 / 正常提示，忽略
+        if (/discussion not found/i.test(reason)) return;
+        if (/not installed/i.test(reason) === false && /^\s*$/.test(reason)) return;
+
         var box = document.getElementById('giscus-container');
-        if (box) showGiscusFallback(box, getGiscusConfig(), d.error);
+        if (box) showGiscusFallback(box, getGiscusConfig(), reason);
       });
     }
 

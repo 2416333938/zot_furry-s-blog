@@ -79,6 +79,35 @@ async function boot(asAdmin) {
        before === after, 'giscus 主题跟随站点');
   }
 
+  console.log('\n[4] Discussion not found 不应被当成错误');
+  {
+    const { window, document } = await boot(false);
+    await new Promise(r => setTimeout(r, 120));
+    window.location.hash = '#/post/post_welcome';
+    await new Promise(r => setTimeout(r, 250));
+
+    // 模拟 giscus 发出的「讨论尚未创建」正常提示
+    window.dispatchEvent(new window.MessageEvent('message', {
+      origin: 'https://giscus.app',
+      data: { giscus: { error: 'Discussion not found. A new discussion will be created if a comment/reaction is submitted.' } }
+    }));
+    await new Promise(r => setTimeout(r, 80));
+
+    const box = document.querySelector('#giscus-container');
+    ok(!!box, '容器仍存在');
+    ok(!document.querySelector('.giscus-fallback'), '未误显示为「加载失败」');
+    ok(!box.textContent.includes('加载失败'), '容器内没有失败文案');
+
+    // 真正的错误仍应显示降级提示
+    window.dispatchEvent(new window.MessageEvent('message', {
+      origin: 'https://giscus.app',
+      data: { giscus: { error: 'giscus is not installed on this repository' } }
+    }));
+    await new Promise(r => setTimeout(r, 80));
+    ok(!!document.querySelector('.giscus-fallback'), '真正错误仍显示降级提示');
+    ok(document.querySelector('.giscus-fallback').textContent.includes('尚未启用'), '降级文案指出未启用');
+  }
+
   console.log('\n==============================');
   console.log('通过 ' + pass + '，失败 ' + fail);
   process.exit(fail ? 1 : 0);
