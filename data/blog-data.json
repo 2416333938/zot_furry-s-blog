@@ -1,7 +1,23 @@
 {
   "version": 2,
-  "savedAt": 1792228980298,
+  "savedAt": 1792229083429,
   "posts": [
+    {
+      "id": "post_mvc6x6c4z2s5x",
+      "title": "合金熔炼（alloy）",
+      "category": "生活记录",
+      "tags": [
+        "题目"
+      ],
+      "cover": "",
+      "pinned": false,
+      "status": "published",
+      "likes": 0,
+      "views": 1,
+      "created": 1792229082196,
+      "updated": 1792229082196,
+      "content": "# 第7题：**合金熔炼（alloy）**\n> 考点方向：贪心/环形 难度定位：T3·提高+/省选\n## 【题目描述】\n有n坩埚围成一圈，第i坩埚中有质量为a_i的金属。每次可以选择相邻的两坩埚合并为一坩\n埚，合并代价为两坩埚质量之和。重复合并直到只剩一坩埚。\n求最小总合并代价。\n## 【输入格式】\n第一行正整数n。第二行n个正整数a_1..a_n。\n## 【输出格式】\n一行一个整数，表示最小总代价。\n## 【样例输入】\n```\n4\n4 5 9 4\n```\n## 【样例输出】\n```\n43\n```\n## 【数据范围】\n2 ≤n≤100，1≤a_i ≤100\n\n## 代码\n``` c++\n#include <bits/stdc++.h>\n#define int long long\nusing namespace std;\nint n, a[100], add;\n\nint hebin(int q) {\n\tint i;\n\tif (a[q] == -1)\n\t\treturn -1;\n\tif (q == n - 1) i = 0;\n\telse i = q + 1;\n\twhile (a[i] == -1) {\n\t\ti++;\n\t\tif (i >= n) i = 0;\n\t}\n\treturn a[i] + a[q];\n}\n\nvoid hc(int q) {\n\tint i;\n\tif (q == n - 1) i = 0;\n\telse i = q + 1;\n\twhile (a[i] == -1) {\n\t\ti++;\n\t\tif (i >= n) i = 0;\n\t}\n\tadd += a[i] += a[q];\n\ta[q] = -1;\n}\n\nsigned main() {\n\tcin >> n;\n\tfor (int i = 0; i < n; i++) {\n\t\tcin >> a[i];\n\t}\n\tint small, x, b;\n\tint cnt = n;\n\tfor (; cnt > 1; cnt--) {\n\t\tsmall = 999999999999999;\n\t\tfor (int i = 0; i < n; i++) {\n\t\t\tx = hebin(i);\n\t\t\tif (x <= small && x != -1) {\n\t\t\t\tsmall = x;\n\t\t\t\tb = i;\n\t\t\t}\n\t\t}\n\t\thc(b);\n\t}\n\tcout << add;\n}\n```"
+    },
     {
       "id": "post_mvc6uys5hvmm5",
       "title": "第10题：农田灌溉（farm)",
