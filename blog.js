@@ -55,6 +55,28 @@
   var CLOUD_API = 'https://api.github.com';
   var CLOUD_PULL_MIN_INTERVAL = 60 * 1000;  // 两次自动拉取的最小间隔，避免触发匿名限流
 
+  /* ---------------------------------------------------------------
+   * 访客评论：giscus（基于 GitHub Discussions）
+   * ---------------------------------------------------------------
+   * 纯静态站点没有后端，访客拿不到写入仓库的令牌，所以「本站自建评论」
+   * 只能写进访客自己的 localStorage。要让访客真正留下评论，走 giscus：
+   * 访客用 GitHub 账号登录 → 评论写进本仓库的 Discussions。
+   * 仓库需已开启 Discussions，并安装 giscus App（giscus.app 一键安装）。
+   * --------------------------------------------------------------- */
+  var GISCUS_DEFAULT = {
+    enabled: true,
+    repo: '2416333938/zot_furry-s-blog',
+    repoId: 'R_kgDOU8WT2w',
+    category: 'General',
+    categoryId: 'DIC_kwDOU8WT284DIs8M',
+    mapping: 'pathname',   // 每篇文章一个独立讨论帖
+    strict: '0',
+    reactionsEnabled: '1',
+    inputPosition: 'top',
+    theme: 'preferred_color_scheme',
+    lang: 'zh-CN'
+  };
+
   var QUOTES = [
     { text: '路漫漫其修远兮，吾将上下而求索。', author: '屈原' },
     { text: '千里之行，始于足下。', author: '老子' },
@@ -838,6 +860,60 @@
     }
   }
 
+  /**
+   * 冷启动兜底：等待首屏云端拉取结束后，再重新解析当前 hash。
+   * 期间显示骨架屏，避免「先报不存在、再闪现文章」的糟糕体验。
+   */
+  function waitForCloudThenRetryPost(postId) {
+    state.view = 'post';
+    showPostSkeleton();
+
+    var waited = 0;
+    var STEP = 120;
+    var MAX_WAIT = 8000;   // 最多等 8 秒，避免网络异常时一直卡住
+
+    (function poll() {
+      // 数据已到位且能找到该文章 → 直接渲染
+      var found = state.posts.find(function (p) {
+        return p.id === postId && p.status === 'published';
+      });
+      if (found) {
+        renderPostPage(found);
+        return;
+      }
+      // 拉取已结束（成功或失败）仍找不到 → 才提示不存在
+      if (state.cloud.bootLoaded) {
+        toast('文章不存在或已被删除', 'error');
+        navigate('#/', true);
+        return;
+      }
+      waited += STEP;
+      if (waited >= MAX_WAIT) {
+        // 超时：用本地缓存兜底，找不到就提示
+        toast('云端加载超时，已显示本地内容', 'warning');
+        var local = state.posts.find(function (p) { return p.id === postId; });
+        if (local && local.status === 'published') renderPostPage(local);
+        else navigate('#/', true);
+        return;
+      }
+      setTimeout(poll, STEP);
+    })();
+  }
+
+  /** 文章加载骨架屏 */
+  function showPostSkeleton() {
+    var app = document.getElementById('app');
+    if (!app) return;
+    app.innerHTML = '<div class="container article-layout">' +
+      '<article class="article-main">' +
+      '<div class="post-skeleton">' +
+      '<div class="sk-line sk-title"></div>' +
+      '<div class="sk-line sk-meta"></div>' +
+      '<div class="sk-line"></div><div class="sk-line"></div>' +
+      '<div class="sk-line short"></div>' +
+      '</div></article></div>';
+  }
+
   function handleRoute() {
     var r = parseHash();
     window.scrollTo({ top: 0, behavior: 'instant' in document.documentElement ? 'auto' : 'auto' });
@@ -850,7 +926,15 @@
         renderPostPage(post);
         return;
       }
-      // 找不到 → 提示并回首页
+
+      /* 冷启动时本地缓存可能是空的，云端数据还在路上。
+         此时不能立刻判定「文章不存在」，先等拉取结果再决定。 */
+      if (!state.cloud.bootLoaded) {
+        waitForCloudThenRetryPost(r.id);
+        return;
+      }
+
+      // 已确认拉取结束仍找不到 → 提示并回首页
       toast('文章不存在或已被删除', 'error');
       navigate('#/', true);
       return;
@@ -1261,6 +1345,10 @@
     highlightCode(app);
     afterRender();
     initTocHighlight();
+
+    // 挂载 giscus 评论区（访客可用 GitHub 账号留言）
+    var giscusBox = document.getElementById('giscus-container');
+    if (giscusBox) mountGiscus(post.id, giscusBox);
   }
 
   /* =====================================================
@@ -1272,37 +1360,162 @@
       .sort(function (a, b) { return a.created - b.created; });
   }
 
+  /** giscus 配置：以站点设置为准，缺项回落到默认值 */
+  function getGiscusConfig() {
+    var cfg = getConfig();
+    var g = cfg.giscus || {};
+    return Object.assign({}, GISCUS_DEFAULT, g);
+  }
+
+  /** 是否启用 giscus（需要 repoId / categoryId 齐全） */
+  function giscusReady() {
+    var g = getGiscusConfig();
+    return !!(g.enabled && g.repoId && g.categoryId);
+  }
+
+  /** 主题映射：跟随站点亮暗色 */
+  function giscusTheme() {
+    return isDarkNow() ? 'dark' : 'light';
+  }
+
+  /** 挂载 giscus 评论区（脚本只能插入一次，切换文章时先清空容器） */
+  function mountGiscus(postId, container) {
+    if (!container || container.dataset.mounted === '1') return;
+    var g = getGiscusConfig();
+
+    container.innerHTML = '';
+    var script = document.createElement('script');
+    script.src = 'https://giscus.app/client.js';
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.setAttribute('data-repo', g.repo);
+    script.setAttribute('data-repo-id', g.repoId);
+    script.setAttribute('data-category', g.category);
+    script.setAttribute('data-category-id', g.categoryId);
+    script.setAttribute('data-mapping', g.mapping || 'pathname');
+    script.setAttribute('data-strict', g.strict || '0');
+    script.setAttribute('data-reactions-enabled', g.reactionsEnabled || '1');
+    script.setAttribute('data-emit-metadata', '0');
+    script.setAttribute('data-input-position', g.inputPosition || 'top');
+    script.setAttribute('data-theme', giscusTheme());
+    script.setAttribute('data-lang', g.lang || 'zh-CN');
+    script.setAttribute('data-loading', 'lazy');
+
+    // giscus 加载失败（网络被墙）时给出可读提示
+    script.onerror = function () {
+      showGiscusFallback(container, g, '网络问题导致评论组件加载失败');
+    };
+
+    // 监听 giscus 的 postMessage：App 未安装 / 配置错误时给出明确指引，
+    // 否则 iframe 会一直停在「正在加载评论…」
+    if (!window.__giscusMsgBound) {
+      window.__giscusMsgBound = true;
+      window.addEventListener('message', function (e) {
+        if (e.origin !== 'https://giscus.app') return;
+        var d = e.data && e.data.giscus;
+        if (!d || !d.error) return;
+        var box = document.getElementById('giscus-container');
+        if (box) showGiscusFallback(box, getGiscusConfig(), d.error);
+      });
+    }
+
+    container.dataset.mounted = '1';
+    container.appendChild(script);
+  }
+
+  /** giscus 不可用时的降级提示（区分「未安装 App」与一般错误） */
+  function showGiscusFallback(container, g, reason) {
+    if (!container || container.dataset.fallback === '1') return;
+    container.dataset.fallback = '1';
+
+    var notInstalled = /not installed/i.test(String(reason || ''));
+    var discussions = 'https://github.com/' + g.repo + '/discussions';
+
+    container.innerHTML =
+      '<div class="giscus-fallback">' +
+        '<p>💬 ' + (notInstalled ? 'GitHub 评论尚未启用' : '评论组件加载失败') + '</p>' +
+        '<p class="muted">' +
+          (notInstalled
+            ? '站长还没把 giscus App 安装到这个仓库。你仍然可以直接到 GitHub Discussions 留言。'
+            : '原因：' + escapeHtml(reason || '未知') + '。') +
+        '</p>' +
+        '<p><a class="btn btn-ghost btn-sm" href="' + escapeHtml(discussions) +
+          '" target="_blank" rel="noopener">前往 GitHub 讨论区</a></p>' +
+      '</div>';
+  }
+
+  /** 主题切换后同步 giscus 配色 */
+  function syncGiscusTheme() {
+    var theme = giscusTheme();
+
+    // 1) 已加载的 iframe：走 giscus 官方 postMessage 协议
+    var iframe = document.querySelector('iframe.giscus-frame');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage(
+        { giscus: { setConfig: { theme: theme } } },
+        'https://giscus.app'
+      );
+    }
+
+    // 2) 尚未加载 / 加载失败：同步 script 属性，下次挂载时即用正确主题
+    var script = document.querySelector('#giscus-container script[src*="giscus.app"]');
+    if (script) script.setAttribute('data-theme', theme);
+  }
+
   function renderComments(postId) {
     var all = getPostComments(postId);
     var roots = all.filter(function (c) { return !c.parentId; });
     var html = '';
 
     html += '<section class="comments" id="comments">';
-    html += '<h3 class="section-title">评论 <span class="count">' + all.length + '</span></h3>';
 
-    /* 评论输入框 */
-    var vname = state.visitor ? state.visitor.nickname : '';
-    html += '<div class="comment-form" id="comment-form">';
-    html += '<div class="form-row">';
-    html += '<label>昵称</label><input type="text" id="c-nickname" maxlength="20" placeholder="怎么称呼你？" value="' + escapeHtml(vname) + '">';
-    html += '</div>';
-    html += '<div class="form-row">';
-    html += '<label>评论</label><textarea id="c-content" rows="4" maxlength="500" placeholder="写下你的看法…（支持基础 Markdown）"></textarea>';
-    html += '</div>';
-    html += '<div class="form-foot">';
-    html += '<span class="muted" id="c-count">0 / 500</span>';
-    html += '<button class="btn btn-primary" id="btn-submit-comment" data-post="' + postId + '">发表评论</button>';
-    html += '</div></div>';
-
-    /* 评论列表 */
-    html += '<div class="comment-list">';
-    if (!roots.length) {
-      html += '<div class="empty-state small"><div class="empty-icon">💬</div><p>还没有评论，来抢沙发～</p></div>';
+    /* ---------- 访客评论区：giscus（GitHub 账号登录） ---------- */
+    if (giscusReady()) {
+      html += '<div class="comments-head">';
+      html += '<h3 class="section-title">💬 留言讨论</h3>';
+      html += '<span class="gh-login-hint">' +
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">' +
+        '<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>' +
+        '用 GitHub 账号登录即可留言</span>';
+      html += '</div>';
+      html += '<div class="giscus-wrap" id="giscus-container" data-post="' + escapeHtml(postId) + '"></div>';
     }
-    roots.forEach(function (c, i) {
-      html += commentItem(c, all, postId, i);
-    });
-    html += '</div>';
+
+    /* ---------- 站长自建评论（仅管理员可见，用于本地/离线场景） ---------- */
+    if (state.isAdmin) {
+      html += '<h3 class="section-title site-comments-title">站长评论 <span class="count">' + all.length + '</span></h3>';
+
+      var vname = state.visitor ? state.visitor.nickname : '';
+      html += '<div class="comment-form" id="comment-form">';
+      html += '<div class="form-row">';
+      html += '<label>昵称</label><input type="text" id="c-nickname" maxlength="20" placeholder="怎么称呼你？" value="' + escapeHtml(vname) + '">';
+      html += '</div>';
+      html += '<div class="form-row">';
+      html += '<label>评论</label><textarea id="c-content" rows="4" maxlength="500" placeholder="写下你的看法…（支持基础 Markdown）"></textarea>';
+      html += '</div>';
+      html += '<div class="form-foot">';
+      html += '<span class="muted" id="c-count">0 / 500</span>';
+      html += '<button class="btn btn-primary" id="btn-submit-comment" data-post="' + postId + '">发表评论</button>';
+      html += '</div></div>';
+
+      html += '<div class="comment-list">';
+      if (!roots.length) {
+        html += '<div class="empty-state small"><div class="empty-icon">💬</div><p>还没有评论，来抢沙发～</p></div>';
+      }
+      roots.forEach(function (c, i) {
+        html += commentItem(c, all, postId, i);
+      });
+      html += '</div>';
+    }
+
+    /* ---------- 访客提示：没有 giscus 时的降级说明 ---------- */
+    if (!giscusReady() && !state.isAdmin) {
+      html += '<div class="comments-head"><h3 class="section-title">💬 留言讨论</h3></div>';
+      html += '<div class="empty-state small"><div class="empty-icon">🔒</div>' +
+        '<p>评论区尚未开启</p>' +
+        '<p class="muted">站长配置 GitHub 讨论区后，访客即可用 GitHub 账号留言。</p></div>';
+    }
+
     html += '</section>';
     return html;
   }
@@ -1465,6 +1678,9 @@
 
       /* 云端同步 */
       html += renderCloudPanel();
+
+      /* 访客评论（giscus） */
+      html += renderGiscusPanel();
     }
 
     html += '</section></div>';
@@ -1492,6 +1708,92 @@
     toast('站点设置已保存', 'success');
     renderAboutPage();
     scheduleCloudPush('更新站点设置');
+  }
+
+  /** 关于页：访客评论（giscus）设置面板 */
+  function renderGiscusPanel() {
+    var g = getGiscusConfig();
+    var ready = giscusReady();
+    var repoUrl = 'https://github.com/' + escapeHtml(g.repo) + '/discussions';
+    var html = '';
+
+    html += '<hr class="soft">';
+    html += '<h2 class="section-title">💬 访客评论（GitHub 登录）</h2>';
+    html += '<div class="giscus-panel">';
+
+    html += '<p class="muted giscus-intro">' +
+      '纯静态站点没有后端，访客无法直接写入仓库。这里接入 <b>giscus</b>：' +
+      '访客用 GitHub 账号登录后，留言会写进本仓库的 Discussions，所有人可见。' +
+      '</p>';
+
+    /* 状态摘要 */
+    html += '<div class="cloud-grid">';
+    html += '<div><b>状态</b><span class="cloud-status ' + (ready ? 'ok' : 'bad') + '">' +
+      (ready ? '已开启' : '未配置完整') + '</span></div>';
+    html += '<div><b>仓库</b><a href="' + repoUrl + '" target="_blank" rel="noopener">' + escapeHtml(g.repo) + '</a></div>';
+    html += '<div><b>讨论分类</b><code>' + escapeHtml(g.category) + '</code></div>';
+    html += '<div><b>文章映射</b><code>' + escapeHtml(g.mapping) + '</code></div>';
+    html += '</div>';
+
+    html += '<div class="settings-form">';
+    html += '<div class="form-row"><label>仓库（owner/repo）</label>' +
+      '<input type="text" id="set-giscus-repo" value="' + escapeHtml(g.repo) + '"></div>';
+    html += '<div class="form-row"><label>Repository ID</label>' +
+      '<input type="text" id="set-giscus-repoId" value="' + escapeHtml(g.repoId) + '"></div>';
+    html += '<div class="form-row"><label>分类名称</label>' +
+      '<input type="text" id="set-giscus-category" value="' + escapeHtml(g.category) + '"></div>';
+    html += '<div class="form-row"><label>Category ID</label>' +
+      '<input type="text" id="set-giscus-categoryId" value="' + escapeHtml(g.categoryId) + '"></div>';
+    html += '<div class="form-row"><label>文章映射方式</label>' +
+      '<select id="set-giscus-mapping">' +
+      ['pathname', 'url', 'title', 'og:title', 'specific'].map(function (m) {
+        return '<option value="' + m + '"' + (g.mapping === m ? ' selected' : '') + '>' + m + '</option>';
+      }).join('') +
+      '</select></div>';
+    html += '<div class="form-row"><label>界面语言</label>' +
+      '<select id="set-giscus-lang">' +
+      ['zh-CN', 'zh-TW', 'en'].map(function (l) {
+        return '<option value="' + l + '"' + (g.lang === l ? ' selected' : '') + '>' + l + '</option>';
+      }).join('') +
+      '</select></div>';
+    html += '<div class="form-row full"><label class="check-label" style="padding-top:0">' +
+      '<input type="checkbox" id="set-giscus-enabled"' + (g.enabled ? ' checked' : '') + '> 启用访客评论</label></div>';
+    html += '<div class="form-foot full"><span class="muted">' +
+      '首次使用需在 <a href="https://github.com/apps/giscus" target="_blank" rel="noopener">github.com/apps/giscus</a> 安装 App 并勾选本仓库' +
+      '</span><button class="btn btn-primary" data-action="save-giscus">保存评论设置</button></div>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  /** 保存 giscus 设置 */
+  function saveGiscusConfig() {
+    var cfg = getConfig();
+    var g = getGiscusConfig();
+    var v = function (id) {
+      var el = document.getElementById(id);
+      return el ? el.value.trim() : '';
+    };
+    g.repo = v('set-giscus-repo') || GISCUS_DEFAULT.repo;
+    g.repoId = v('set-giscus-repoId');
+    g.category = v('set-giscus-category') || GISCUS_DEFAULT.category;
+    g.categoryId = v('set-giscus-categoryId');
+    g.mapping = v('set-giscus-mapping') || 'pathname';
+    g.lang = v('set-giscus-lang') || 'zh-CN';
+    var en = document.getElementById('set-giscus-enabled');
+    g.enabled = !!(en && en.checked);
+
+    if (g.enabled && (!g.repoId || !g.categoryId)) {
+      toast('启用访客评论需要填写 Repository ID 与 Category ID', 'warning');
+      return;
+    }
+
+    cfg.giscus = g;
+    setConfig(cfg);
+    toast('评论设置已保存', 'success');
+    renderAboutPage();
+    scheduleCloudPush('更新评论设置');
   }
 
   /* =====================================================
@@ -2293,6 +2595,7 @@
     document.documentElement.setAttribute('data-theme', isDarkNow() ? 'dark' : 'light');
     localStorage.setItem(STORAGE_KEYS.theme, state.theme);
     renderHeader();
+    syncGiscusTheme();
   }
 
   function toggleTheme() {
@@ -2459,6 +2762,7 @@
           case 'share': shareLink(); return;
           case 'cancel-reply': state.replyingTo = null; handleRoute(); return;
           case 'save-config': saveConfigFromForm(); return;
+          case 'save-giscus': saveGiscusConfig(); return;
           case 'export': exportData(); return;
           case 'import': importData(); return;
           case 'restore-samples': restoreSamples(); return;
@@ -3189,6 +3493,7 @@
       var data = JSON.parse(b64DecodeUnicode(res.content));
       state.cloud.sha = res.sha || null;
       applyCloudData(data, opts);
+      state.cloud.bootLoaded = true;
       state.cloud.status = 'synced';
       state.cloud.lastSync = Date.now();
       state.cloud.lastPullAt = Date.now();
@@ -3208,6 +3513,12 @@
         : (e.message || '读取失败');
       if (!opts.quiet) { renderHeader(); toast('云端载入失败：' + state.cloud.message, 'error'); }
       return { ok: false, error: e };
+    }).then(function (result) {
+      // 无论成功、404 还是网络失败，都标记「首屏拉取已结束」，
+      // 否则文章页会一直停在骨架屏上
+      state.cloud.bootLoaded = true;
+      state.cloud.lastPullAt = Date.now();
+      return result;
     });
   }
 
