@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "savedAt": 1792219056081,
+  "savedAt": 1792219203067,
   "posts": [
     {
       "id": "post_mvannhh9o3y9v",
@@ -11,10 +11,10 @@
       "pinned": false,
       "status": "published",
       "likes": 0,
-      "views": 1,
+      "views": 3,
       "created": 1792136251197,
-      "updated": 1792136251197,
-      "content": "# 入场\n## 简单生活\n## 快乐学习\n# 中间\n## 九班人能飞\n## 不服你来追\n`不知道谁写的，写的好烂`"
+      "updated": 1792219201857,
+      "content": "# 入场\n** 简单生活**\n** 快乐学习**\n# 中间\n** 九班人能飞**\n** 不服你来追**\n`不知道谁写的，写的好烂`"
     },
     {
       "id": "post_mv3atnaoceebm",
