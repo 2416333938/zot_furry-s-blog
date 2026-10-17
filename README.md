@@ -11,9 +11,10 @@
 - **草稿箱**：点「写文章」先进入草稿箱，集中管理**未发布**的草稿；可继续编辑、**新建分支**（以当前内容另存为新草稿）、直接发布、删除；编辑器内也有「新建分支」按钮
 - **内容引擎**：自研 Markdown 渲染器、代码语法高亮、自动文章目录（滚动高亮）、字数与阅读时长
 - **内容发现**：分类筛选、标签云、全文搜索（`Ctrl+K`）、最新/最热排序、分页、热门文章、相关推荐
-- **互动系统**：楼中楼评论回复、评论/文章点赞、浏览量、复制链接、上一篇/下一篇导航
+- **互动系统**：访客用 **GitHub 账号留言**（giscus / GitHub Discussions）、站长本地评论、评论/文章点赞、浏览量、复制链接、上一篇/下一篇导航
 - **管理员登录**：**密钥密码解密登录**，密码不保存在代码或仓库中
 - **云端同步**：文章/评论/站点设置自动提交到 GitHub 仓库，多设备共享
+- **首屏优化**：冷启动直接打开文章链接时显示骨架屏并等待云端数据，不会误报「文章不存在」
 - **界面体验**：亮/暗主题、响应式移动端导航、阅读进度条、返回顶部、滚动出现动画、Toast 通知
 - **数据持久化**：导出/导入 JSON 备份、恢复示例、一键清空
 
@@ -101,6 +102,39 @@ git add -A && git commit -m "轮换密钥" && git push
 
 > 草稿与正式文章共用同一份数据（`status: 'draft'` / `'published'`），因此会一起同步到云端仓库，多设备一致。
 
+## 访客评论（GitHub 登录）
+
+本站是纯静态页面，没有后端，访客拿不到写入仓库的令牌——所以「本站自建评论」只能存进访客自己的浏览器。
+要让**访客真正留言**，评论区接入了 [giscus](https://giscus.app)：访客用 GitHub 账号登录后，
+留言写入本仓库的 **GitHub Discussions**，所有人可见。
+
+### 一次性配置（管理员在 GitHub 上操作）
+
+1. **开启 Discussions**：仓库 → Settings → General → Features → 勾选 **Discussions**（已开启）
+2. **安装 giscus App**：打开 https://github.com/apps/giscus → Install → 选择本仓库
+3. **确认分类**：仓库 Discussions 里应存在 `General` 分类（默认已有）
+
+> 第 2 步必须手动完成——第三方 App 授权无法由代码代替。
+> 未安装时评论区会显示「GitHub 评论尚未启用」，并提供跳转到 Discussions 的入口。
+
+### 参数位置
+
+配置已内联在 `blog.js` 的 `GISCUS_DEFAULT`，也可在站点「关于 → 访客评论」面板中修改：
+
+| 参数 | 当前值 |
+|---|---|
+| repo | `2416333938/zot_furry-s-blog` |
+| repoId | `R_kgDOU8WT2w` |
+| category | `General` |
+| categoryId | `DIC_kwDOU8WT284DIs8M` |
+| mapping | `pathname`（每篇文章一个讨论帖） |
+
+### 说明
+
+- 评论内容不在 `data/blog-data.json` 里，而是由 GitHub Discussions 托管，随文章 URL 自动关联
+- 管理员登录后仍可在文章底部使用「站长评论」（本地/离线场景）
+- 主题切换会同步 giscus 的亮/暗配色
+
 ## 本地使用
 
 直接用浏览器打开 `index.html`，或起个静态服务：
@@ -117,7 +151,9 @@ npx serve .
 npm i jsdom                 # 仅测试需要
 node _smoke/crypto-test.js                              # 加密正确性（含官方测试向量）
 BLOG_TEST_PASSWORD=… node _smoke/unlock-test.js          # 端到端解锁流程
-BLOG_TEST_PASSWORD=… node _smoke/smoke.js                # 69 项功能回归
+BLOG_TEST_PASSWORD=… node _smoke/smoke.js                # 82 项功能回归（无密码时以已登录态运行）
+node _smoke/giscus-test.js                               # 访客评论区渲染与主题同步
+node _smoke/coldstart-test.js                            # 冷启动直接打开文章页不误报「不存在」
 ```
 
 ## 调试 API

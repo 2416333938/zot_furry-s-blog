@@ -868,6 +868,63 @@ textarea { resize: vertical; line-height: 1.65; width: 100%; }
 
 /* ---------- 12. 评论 ---------- */
 .comments { margin-top: 40px; }
+
+/* 访客评论区（giscus） */
+.comments-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.comments-head .section-title { margin: 0; }
+.gh-login-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--text-2);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  padding: 4px 12px; border-radius: 999px;
+}
+.giscus-wrap { margin-bottom: 30px; min-height: 120px; }
+.giscus-wrap iframe { width: 100%; border: none; }
+.giscus-fallback {
+  text-align: center;
+  padding: 26px 20px;
+  background: var(--card-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+}
+.giscus-fallback p { margin: 0 0 8px; }
+.giscus-fallback p:last-child { margin-bottom: 0; }
+.site-comments-title {
+  margin-top: 8px;
+  padding-top: 22px;
+  border-top: 1px dashed var(--border);
+}
+
+/* 关于页：giscus 设置面板 */
+.giscus-panel { margin-top: 6px; }
+
+/* 文章加载骨架屏（冷启动等待云端数据） */
+.post-skeleton { padding: 8px 0; }
+.sk-line {
+  height: 15px; border-radius: 6px; margin-bottom: 14px;
+  background: linear-gradient(90deg, var(--bg-soft) 25%, var(--card-2) 37%, var(--bg-soft) 63%);
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease infinite;
+}
+.sk-line.sk-title { height: 32px; width: 62%; margin-bottom: 20px; }
+.sk-line.sk-meta { height: 13px; width: 38%; margin-bottom: 26px; }
+.sk-line.short { width: 72%; }
+@keyframes sk-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-line { animation: none; }
+}
+.giscus-intro { margin: 0 0 16px; line-height: 1.75; }
+.giscus-panel .cloud-grid { margin-bottom: 18px; }
+
 .comment-form {
   background: var(--card-2);
   border: 1px solid var(--border);
