@@ -1,7 +1,23 @@
 {
   "version": 2,
-  "savedAt": 1792288076505,
+  "savedAt": 1792288220560,
   "posts": [
+    {
+      "id": "post_mvd64ouxia8b4",
+      "title": "送货路线（deliver）",
+      "category": "生活记录",
+      "tags": [
+        "题目"
+      ],
+      "cover": "",
+      "pinned": false,
+      "status": "published",
+      "likes": 0,
+      "views": 1,
+      "created": 1792288219353,
+      "updated": 1792288219353,
+      "content": "# 第8题：**送货路线（deliver）**\n\n> 考点方向：状压DP/TSP 难度定位：T4·省选\n\n## 【题目描述】\n\n有n个城市（编号0\\~n-1，0号为仓库），给出n×n的距离矩阵d\\[i]\\[j]。快递员从仓库出\n\n发，访问所有城市后返回仓库。\n\n另有m个先后约束：城市u必须在城市v之前被访问。\n\n求满足所有约束的最短回路长度。若无解输出-1。\n\n## 【输入格式】\n\n第一行n,m。接下来n行每行n个整数表示距离矩阵。接下来m行每行u,v表示u须在v\n\n之前。\n\n## 【输出格式】\n\n一行一个整数，最短回路长度或-1。\n\n## 【样例输入】\n\n```\n\n4 1\n\n0 2 9 10\n\n2 0 6 4\n\n9 6 0 3\n\n10 4 3 0\n\n1 3\n\n```\n\n## 【样例输出】\n\n```\n\n18\n\n```\n\n## 【数据范围】\n\n2 ≤n≤16，0≤m≤n(n-1)/2，0≤d\\[i]\\[j] ≤ 10^6\n\n##代码\n``` c++\n#include <bits/stdc++.h>\nusing namespace std;\n#define cin qwertyuiop\n#define cout asdfghjkl\n\nconst int INF = 0x3f3f3f3f;\nifstream qwertyuiop(\"送货路线.in\");\nofstream asdfghjkl(\"送货路线.out\");\nint d[20][20];\nint dp[1 << 16][16];     \n\n\nint main() {\n\n\n\tint n, m;\n\tcin >> n >> m;\n\n\tfor (int i = 0; i < n; i++)\n\t\tfor (int j = 0; j < n; j++)\n\t\t\tcin >> d[i][j];\n\n\tvector<int> pre(n, 0);\n\tfor (int i = 0; i < m; i++) {\n\t\tint u, v;\n\t\tcin >> u >> v;\n\t\tpre[v] |= (1 << u);\n\t}\n\n\tif (pre[0] != 0) {\n\t\tcout << -1 << '\\n';\n\t\treturn 0;\n\t}\n\n\tint N = 1 << n;\n\tmemset(dp, 0x3f, sizeof(dp));\n\tdp[1][0] = 0;\n\n\tfor (int mask = 1; mask < N; mask++) {\n\t\tfor (int i = 0; i < n; i++) {\n\t\t\tif (!(mask & (1 << i)))    continue;\n\t\t\tif (dp[mask][i] == INF)    continue;\n\n\t\t\tfor (int j = 0; j < n; j++) {\n\t\t\t\tif (mask & (1 << j))      continue;\n\t\t\t\tif ((mask & pre[j]) != pre[j]) continue;\n\n\t\t\t\tint nmask = mask | (1 << j);\n\t\t\t\tint nd = dp[mask][i] + d[i][j];\n\t\t\t\tif (nd < dp[nmask][j])\n\t\t\t\t\tdp[nmask][j] = nd;\n\t\t\t}\n\t\t}\n\t}\n\n\tint full = N - 1, ans = INF;\n\tfor (int i = 1; i < n; i++)\n\t\tif (dp[full][i] != INF)\n\t\t\tans = min(ans, dp[full][i] + d[i][0]);\n\n\tcout << (ans == INF ? -1 : ans) << '\\n';\n}\n```"
+    },
     {
       "id": "post_mvc6x6c4z2s5x",
       "title": "合金熔炼（alloy）",
