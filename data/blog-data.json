@@ -1,23 +1,7 @@
 {
   "version": 2,
-  "savedAt": 1792288058682,
+  "savedAt": 1792288065041,
   "posts": [
-    {
-      "id": "post_mvd5yirp4dy4z",
-      "title": "智能门禁（access）",
-      "category": "生活记录 智能门禁",
-      "tags": [
-        "题目"
-      ],
-      "cover": "",
-      "pinned": false,
-      "status": "draft",
-      "likes": 0,
-      "views": 0,
-      "created": 1792287931525,
-      "updated": 1792287931525,
-      "content": "# 第 1 题：智能门禁（access）\n 考点方向：模拟 / 枚举    难度定位：T1 · 普及\n## 【题目描述】\n 门禁密码为 4 位数字（每位 0~9，循环）。设防方式为：从正确密码出发，随机执行恰好一次操作——要么将某一位转动 k 个位置（k=1..9），要么将相邻两位分别转动 +k 和 -k 个位置（k=1..9）。\n 现记录了 n 个设防后的状态（均不是正确密码），求有多少个可能的正确密码，使得每个记录状态都能由该密码通过一次上述操作得到。\n## 【输入格式】\n 第一行正整数 n。接下来 n 行每行 4 个整数（0~9），表示一个状态。\n## 【输出格式】\n 一行一个整数，表示可能的正确密码数量。\n## 【样例输入】\n```\n1\n0 0 1 1\n```\n## 【样例输出】\n```\n63\n```\n## 【数据范围】\n1 ≤ n ≤ 8\n\n\n\n\n\n# 题解\n```c++\n#include <bits/stdc++.h>\nusing namespace std;\nint N;\nint S[10][4];\nbool C(int P[4], int S[4]) {\n\tint d[4];\n\tvector<int> nz;\n\tfor (int i = 0; i < 4; i++)\n\t\td[i] = (S[i] - P[i] + 10) % 10;\n\n\tfor (int i = 0; i < 4; i++)\n\t\tif (d[i] != 0) nz.push_back(i);\n\tif (nz.size() == 1) return true;\n\tif (nz.size() == 2 && nz[1] - nz[0] == 1) {\n\t\tif ((d[nz[0]] + d[nz[1]]) % 10 == 0)\n\t\t\treturn true;\n\t}\n\treturn false;\n}\n\nint main() {\n\tcin >> N;\n\tfor (int i = 0; i < N; i++)\n\t\tcin >> S[i][0] >> S[i][1] >> S[i][2] >> S[i][3];\n\n\tint ans = 0;\n\tfor (int x = 0; x < 10000; x++) {\n\t\tint P[4] = {x / 1000, (x / 100) % 10, (x / 10) % 10, x % 10};\n\t\tbool ok = true;\n\t\tfor (int i = 0; i < N; i++) {\n\t\t\tif (!C(P, S[i])) {\n\t\t\t\tok = false;\n\t\t\t\tbreak;\n\t\t\t}\n\t\t}\n\t\tif (ok) ans++;\n\t}\n\tcout << ans ;\n}\n#pragma GCC optimize(3) \n```"
-    },
     {
       "id": "post_mvd5y6clx5l64",
       "title": "智能门禁（access）",
