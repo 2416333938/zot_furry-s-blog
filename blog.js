@@ -2100,8 +2100,15 @@
    * @param {string|null} postId 文章 id；null 表示新建
    * @param {Object} [preset] 新建时的预填内容 {title, category, tags, content}
    */
-  function openEditor(postId, preset) {
-    if (!state.isAdmin) { openLogin(function () { openEditor(postId, preset); }); return; }
+  /**
+   * 打开编辑器
+   * @param {string|null} postId 文章 id；null 表示新建
+   * @param {Object} [preset] 新建时的预填内容 {title, category, tags, content}
+   * @param {Object} [opts] {fresh:true} 表示「全新草稿」，不恢复本地暂存内容
+   */
+  function openEditor(postId, preset, opts) {
+    if (!state.isAdmin) { openLogin(function () { openEditor(postId, preset, opts); }); return; }
+    opts = opts || {};
 
     state.editingId = postId || null;
     var post = postId ? state.posts.find(function (p) { return p.id === postId; }) : null;
@@ -2121,12 +2128,17 @@
       content = preset.content || '';
     }
 
-    // 恢复未发布的本地草稿（仅新建且无 preset 时）
-    var drafts = load(STORAGE_KEYS.drafts, {});
-    if (!post && !preset && drafts.title) {
-      title = drafts.title; cat = drafts.category || '';
-      tags = drafts.tags || ''; content = drafts.content || '';
-      toast('已恢复上次未发布的草稿', 'info');
+    // 仅在「恢复现场」时读取本地暂存草稿。
+    // 点「新建草稿」必须是一片空白，不能悄悄带回上一篇临时内容。
+    if (!post && !preset && !opts.fresh) {
+      var drafts = load(STORAGE_KEYS.drafts, {});
+      if (drafts.title || drafts.content) {
+        title = drafts.title || '';
+        cat = drafts.category || '';
+        tags = drafts.tags || '';
+        content = drafts.content || '';
+        toast('已恢复上次未保存的草稿', 'info');
+      }
     }
 
     var categories = Array.from(new Set(state.posts.map(function (p) { return p.category; })));
@@ -2747,7 +2759,7 @@
           case 'logout': logout(); return;
           case 'open-drafts': navigate('#/drafts'); return;
           case 'new-post':
-          case 'new-draft': openEditor(null); return;
+          case 'new-draft': openEditor(null, null, { fresh: true }); return;
           case 'close-editor': closeEditor(); return;
           case 'publish': publishPost(false); return;
           case 'save-draft': publishPost(true); return;
